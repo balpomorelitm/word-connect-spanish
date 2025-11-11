@@ -155,6 +155,16 @@ function sharedLetterCount(a, b) {
   return count;
 }
 
+function calculateOverlapScore(words) {
+  let totalOverlap = 0;
+  for (let i = 0; i < words.length; i += 1) {
+    for (let j = i + 1; j < words.length; j += 1) {
+      totalOverlap += sharedLetterCount(words[i], words[j]);
+    }
+  }
+  return totalOverlap;
+}
+
 function haveSharedLetters(a, b) {
   return sharedLetterCount(a, b) > 0;
 }
@@ -388,35 +398,38 @@ function chooseWordCount(currentCount, levelsPerUnit, availableCount) {
     return 0;
   }
 
+  const progress = levelsPerUnit > 0 ? currentCount / levelsPerUnit : 0;
+
   if (availableCount === 2) {
     return 2;
   }
 
-  const progress = levelsPerUnit > 0 ? currentCount / levelsPerUnit : 0;
+  if (progress < 0.25) {
+    return Math.min(3, availableCount);
+  }
 
   if (availableCount === 3) {
-    if (progress > 0.5) {
+    if (progress > 0.6) {
       return 3;
     }
     return Math.random() < 0.5 ? 3 : 2;
   }
 
-  if (progress < 0.25) {
-    return 2;
-  }
   if (progress < 0.6) {
-    return Math.random() < 0.6 ? 3 : 2;
+    return Math.min(Math.random() < 0.6 ? 3 : 4, availableCount);
   }
 
-  return Math.random() < 0.5 ? 4 : 3;
+  return Math.min(Math.random() < 0.5 ? 4 : 3, availableCount);
 }
 
-function selectWordCombo(words, targetSize) {
+function selectWordCombo(words, targetSize, preferHighOverlap = false) {
   if (words.length < targetSize || targetSize < 2) {
     return null;
   }
 
-  const attempts = Math.min(words.length * 4, 100);
+  const attempts = Math.min(words.length * 6, 150);
+  let bestCombo = null;
+  let bestScore = -1;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const shuffled = shuffleArray(words.slice());
@@ -441,15 +454,12 @@ function selectWordCombo(words, targetSize) {
         if (overlapB !== overlapA) {
           return overlapB - overlapA;
         }
-        if (a.length !== b.length) {
-          return a.length - b.length;
-        }
-        return a.localeCompare(b);
+        return a.length - b.length;
       });
 
       const bestOverlap = sharedLetterCount(candidates[0], joinedLetters);
       const topCandidates = candidates.filter(
-        (word) => sharedLetterCount(word, joinedLetters) === bestOverlap,
+        (word) => sharedLetterCount(word, joinedLetters) >= bestOverlap - 1,
       );
 
       selected.push(topCandidates[Math.floor(Math.random() * topCandidates.length)]);
@@ -458,13 +468,21 @@ function selectWordCombo(words, targetSize) {
     if (selected.length === targetSize) {
       const uniqueSelected = Array.from(new Set(selected));
       if (uniqueSelected.length === targetSize) {
-        uniqueSelected.sort();
-        return uniqueSelected;
+        const score = calculateOverlapScore(uniqueSelected);
+
+        if (preferHighOverlap) {
+          if (score > bestScore) {
+            bestScore = score;
+            bestCombo = uniqueSelected.slice().sort();
+          }
+        } else {
+          return uniqueSelected.sort();
+        }
       }
     }
   }
 
-  return null;
+  return bestCombo;
 }
 
 function generateLevelsForUnit(words, levelsPerUnit) {
@@ -491,13 +509,16 @@ function generateLevelsForUnit(words, levelsPerUnit) {
       break;
     }
 
+    const progress = generated.length / levelsPerUnit;
+    const preferHighOverlap = progress < 0.4;
+
     const desiredSize = chooseWordCount(generated.length, levelsPerUnit, availableCount);
     const targetSize = Math.min(desiredSize, availableCount);
     if (targetSize < 2) {
       continue;
     }
 
-    const combo = selectWordCombo(eligibleWords, targetSize);
+    const combo = selectWordCombo(eligibleWords, targetSize, preferHighOverlap);
     if (!combo) {
       continue;
     }
@@ -530,6 +551,7 @@ function generateLevelsForUnit(words, levelsPerUnit) {
         wordCount: solutionWords.length,
         maxWordLength,
         uniqueLetterCount,
+        overlapScore: calculateOverlapScore(solutionWords),
       },
     });
   }
@@ -541,6 +563,9 @@ function generateLevelsForUnit(words, levelsPerUnit) {
   generated.sort((a, b) => {
     if (a.metrics.wordCount !== b.metrics.wordCount) {
       return a.metrics.wordCount - b.metrics.wordCount;
+    }
+    if (a.metrics.overlapScore !== b.metrics.overlapScore) {
+      return b.metrics.overlapScore - a.metrics.overlapScore;
     }
     if (a.metrics.maxWordLength !== b.metrics.maxWordLength) {
       return a.metrics.maxWordLength - b.metrics.maxWordLength;
@@ -607,6 +632,7 @@ module.exports = {
   normalizeWord,
   buildLetterPool,
   sharedLetterCount,
+  calculateOverlapScore,
   haveSharedLetters,
   createCrossword,
   generateLevelsForUnit,
