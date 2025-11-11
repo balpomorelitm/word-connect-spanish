@@ -1,3 +1,5 @@
+// ... (todo el código que has puesto arriba como versión completa original)
+// INICIO DEL BLOQUE NUEVO: función mejorada de createCrossword + utilidades
 function createCrossword(words) {
   if (!words.length) {
     return null;
@@ -7,46 +9,38 @@ function createCrossword(words) {
     return null;
   }
 
-  // Nuevo: probar TODOS los órdenes y todas las posiciones base
-  // Mezcla todos los órdenes posibles para maximizar cruces variados
+  // Prueba TODOS los órdenes posibles y posiciones base
   let bestPlacements = null;
   let bestScore = -1;
-  let attempts = 0;
-  const MAX_ATTEMPTS = uniqueWords.length > 1 ? Math.min(120, factorial(uniqueWords.length)) : 1;
   const perms = generateAllPermutations(uniqueWords);
 
   for (const order of perms) {
     for (const orientation of ['horizontal', 'vertical']) {
       const placements = buildCrosswordFromOrder(order, orientation);
       if (placements) {
-        // Analiza la posición de cruce, evitando primeras letras
-        let minCrossPos = Number.MAX_SAFE_INTEGER;
+        // Penaliza cruces solo en primeras letras, premia variedad
+        let minCrossDist = Number.MAX_SAFE_INTEGER;
+        let crossCount = 0;
         if (placements.length > 1) {
           for (let i = 1; i < placements.length; i++) {
-            let overlap = Math.abs(placements[i].start_x - placements[0].start_x) + Math.abs(placements[i].start_y - placements[0].start_y);
-            if (overlap > 0) {
-              minCrossPos = Math.min(minCrossPos, overlap);
+            let cellDelta = Math.abs(placements[i].start_x - placements[0].start_x) + Math.abs(placements[i].start_y - placements[0].start_y);
+            if (cellDelta > 0) {
+              minCrossDist = Math.min(minCrossDist, cellDelta);
+              crossCount++;
             }
           }
         }
-        // Premia cruces alejados de posición 0
-        let score = -minCrossPos;
-        // Si hay varios cruces en posiciones distintas, mejor
-        score += placements.length * 2;
+        // Criterio de puntuación: más cruces lejanos, más palabras cruzadas
+        let score = crossCount * 5 - minCrossDist;
         if (score > bestScore) {
           bestScore = score;
           bestPlacements = placements;
         }
       }
-      attempts++;
-      if (attempts >= MAX_ATTEMPTS) break;
     }
-    if (attempts >= MAX_ATTEMPTS) break;
   }
-
   return bestPlacements;
 }
-
 function generateAllPermutations(arr) {
   if (arr.length <= 1) return [arr];
   const results = [];
@@ -63,12 +57,9 @@ function generateAllPermutations(arr) {
   permute(arr);
   return results;
 }
-
 function factorial(n) {
   let res = 1;
   for (let i = 2; i <= n; ++i) res *= i;
   return res;
 }
-
-// Reemplaza el bloque original dentro de generate_puzzles.js
-// El resto del archivo permanece igual hasta usar esta función en el generador de niveles
+// ... (resto del archivo igual)
