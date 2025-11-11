@@ -1,0 +1,29 @@
+{
+  "name": "word-connect-spanish",
+  "version": "1.0.0",
+  "description": "Interactive crossword-style word game for Spanish vocabulary learning with bonus word system",
+  "main": "generate_puzzles.js",
+  "scripts": {
+    "generate": "node generate_puzzles.js",
+    "serve": "python -m http.server 8000",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "spanish",
+    "education",
+    "word-game",
+    "crossword",
+    "vocabulary",
+    "learning",
+    "puzzle"
+  ],
+  "author": "balpomorelitm",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/balpomorelitm/word-connect-spanish"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  }
+}
