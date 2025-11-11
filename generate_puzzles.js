@@ -144,246 +144,415 @@ function buildLetterPool(words) {
     .flatMap((letter) => Array(maxCounts[letter]).fill(letter));
 }
 
-function findPlacement(baseWord, verticalWords) {
-  if (!baseWord || !verticalWords.length) {
+function sharedLetterCount(a, b) {
+  const setA = new Set(a.split(''));
+  let count = 0;
+  for (const letter of new Set(b.split(''))) {
+    if (setA.has(letter)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function haveSharedLetters(a, b) {
+  return sharedLetterCount(a, b) > 0;
+}
+
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function coordinateKey(x, y) {
+  return `${x},${y}`;
+}
+
+function canPlaceWord(word, startX, startY, direction, grid) {
+  let touchesExisting = false;
+
+  for (let i = 0; i < word.length; i += 1) {
+    const x = direction === 'horizontal' ? startX + i : startX;
+    const y = direction === 'vertical' ? startY + i : startY;
+    const key = coordinateKey(x, y);
+    const existing = grid.get(key);
+
+    if (existing) {
+      if (existing.letter !== word[i]) {
+        return false;
+      }
+      touchesExisting = true;
+    }
+  }
+
+  return touchesExisting;
+}
+
+function placeWordOnGrid(word, startX, startY, direction, grid, placements) {
+  const placement = { word, start_x: startX, start_y: startY, direction };
+  placements.push(placement);
+
+  for (let i = 0; i < word.length; i += 1) {
+    const x = direction === 'horizontal' ? startX + i : startX;
+    const y = direction === 'vertical' ? startY + i : startY;
+    const key = coordinateKey(x, y);
+    const letter = word[i];
+
+    const cell = grid.get(key);
+    if (cell) {
+      cell.words.add(word);
+    } else {
+      grid.set(key, { letter, words: new Set([word]) });
+    }
+  }
+
+  return placement;
+}
+
+function removeWordFromGrid(placement, grid, placements) {
+  placements.pop();
+
+  const { word, start_x: startX, start_y: startY, direction } = placement;
+  for (let i = 0; i < word.length; i += 1) {
+    const x = direction === 'horizontal' ? startX + i : startX;
+    const y = direction === 'vertical' ? startY + i : startY;
+    const key = coordinateKey(x, y);
+    const cell = grid.get(key);
+
+    if (!cell) {
+      continue;
+    }
+
+    cell.words.delete(word);
+    if (cell.words.size === 0) {
+      grid.delete(key);
+    }
+  }
+}
+
+function findPlacementsForWord(word, placements, grid) {
+  const options = [];
+  const seen = new Set();
+
+  for (const placed of placements) {
+    const otherWord = placed.word;
+
+    for (let otherIndex = 0; otherIndex < otherWord.length; otherIndex += 1) {
+      const letter = otherWord[otherIndex];
+      for (let wordIndex = 0; wordIndex < word.length; wordIndex += 1) {
+        if (word[wordIndex] !== letter) {
+          continue;
+        }
+
+        let startX;
+        let startY;
+        let direction;
+
+        if (placed.direction === 'horizontal') {
+          direction = 'vertical';
+          const x = placed.start_x + otherIndex;
+          const y = placed.start_y;
+          startX = x;
+          startY = y - wordIndex;
+        } else {
+          direction = 'horizontal';
+          const x = placed.start_x;
+          const y = placed.start_y + otherIndex;
+          startX = x - wordIndex;
+          startY = y;
+        }
+
+        if (!canPlaceWord(word, startX, startY, direction, grid)) {
+          continue;
+        }
+
+        const key = `${startX},${startY},${direction}`;
+        if (seen.has(key)) {
+          continue;
+        }
+
+        seen.add(key);
+        options.push({ word, start_x: startX, start_y: startY, direction });
+      }
+    }
+  }
+
+  return shuffleArray(options);
+}
+
+function normalizePlacements(placements) {
+  let minX = Infinity;
+  let minY = Infinity;
+
+  for (const placement of placements) {
+    minX = Math.min(minX, placement.start_x);
+    minY = Math.min(minY, placement.start_y);
+  }
+
+  const shiftX = Number.isFinite(minX) && minX < 0 ? -minX : 0;
+  const shiftY = Number.isFinite(minY) && minY < 0 ? -minY : 0;
+
+  return placements.map((placement) => ({
+    word: placement.word,
+    start_x: placement.start_x + shiftX,
+    start_y: placement.start_y + shiftY,
+    direction: placement.direction,
+  }));
+}
+
+function buildCrosswordFromOrder(order, baseOrientation) {
+  if (!order.length) {
     return null;
   }
 
-  const placements = [
-    { word: baseWord, start_x: 0, start_y: 0, direction: 'horizontal' },
-  ];
-
   const grid = new Map();
-  const letterColumns = {};
+  const placements = [];
 
-  for (let x = 0; x < baseWord.length; x += 1) {
-    const letter = baseWord[x];
-    const key = `${x},0`;
-    grid.set(key, letter);
-    if (!letterColumns[letter]) {
-      letterColumns[letter] = [];
-    }
-    letterColumns[letter].push(x);
-  }
+  placeWordOnGrid(order[0], 0, 0, baseOrientation, grid, placements);
 
-  const usedColumns = new Set();
+  const remaining = order.slice(1).sort((a, b) => b.length - a.length);
 
-  for (const word of verticalWords) {
-    if (!word || word.length === 0) {
-      return null;
+  function backtrack(index) {
+    if (index >= remaining.length) {
+      return true;
     }
 
-    const initial = word[0];
-    const candidates = (letterColumns[initial] || []).filter((col) => !usedColumns.has(col));
-    if (!candidates.length) {
-      return null;
-    }
+    const word = remaining[index];
+    const options = findPlacementsForWord(word, placements, grid);
 
-    const column = candidates[0];
+    for (const option of options) {
+      const placed = placeWordOnGrid(
+        option.word,
+        option.start_x,
+        option.start_y,
+        option.direction,
+        grid,
+        placements,
+      );
 
-    for (let i = 0; i < word.length; i += 1) {
-      const y = i;
-      const key = `${column},${y}`;
-      const existing = grid.get(key);
-      const letter = word[i];
-      if (existing && existing !== letter) {
-        return null;
-      }
-    }
-
-    usedColumns.add(column);
-
-    for (let i = 0; i < word.length; i += 1) {
-      const y = i;
-      const key = `${column},${y}`;
-      grid.set(key, word[i]);
-    }
-
-    placements.push({ word, start_x: column, start_y: 0, direction: 'vertical' });
-  }
-
-  return placements;
-}
-
-function permute(items) {
-  if (items.length <= 1) {
-    return [items.slice()];
-  }
-
-  const permutations = [];
-
-  function backtrack(current, remaining) {
-    if (!remaining.length) {
-      permutations.push(current.slice());
-      return;
-    }
-
-    for (let i = 0; i < remaining.length; i += 1) {
-      current.push(remaining[i]);
-      const nextRemaining = remaining.slice(0, i).concat(remaining.slice(i + 1));
-      backtrack(current, nextRemaining);
-      current.pop();
-    }
-  }
-
-  backtrack([], items);
-  return permutations;
-}
-
-function createLevelFromCombination(words) {
-  for (let i = 0; i < words.length; i += 1) {
-    const base = words[i];
-    const verticalCandidates = words.filter((_, index) => index !== i);
-    const permutations = permute(verticalCandidates);
-
-    for (const option of permutations) {
-      const layout = findPlacement(base, option);
-      if (!layout) {
-        continue;
+      if (backtrack(index + 1)) {
+        return true;
       }
 
-      const solutionWords = [base, ...option];
-      return {
-        solution_words: solutionWords,
-        grid_layout: layout,
-        letter_pool: buildLetterPool(solutionWords),
-      };
+      removeWordFromGrid(placed, grid, placements);
+    }
+
+    return false;
+  }
+
+  if (!backtrack(0)) {
+    return null;
+  }
+
+  return normalizePlacements(placements);
+}
+
+function createCrossword(words) {
+  if (!words.length) {
+    return null;
+  }
+
+  const uniqueWords = Array.from(new Set(words));
+  if (uniqueWords.length !== words.length) {
+    return null;
+  }
+
+  const byLength = uniqueWords.slice().sort((a, b) => b.length - a.length);
+  const attempts = [];
+
+  const maxBases = Math.min(byLength.length, 3);
+  for (let i = 0; i < maxBases; i += 1) {
+    const baseWord = byLength[i];
+    const others = uniqueWords.filter((word) => word !== baseWord);
+    attempts.push([baseWord, ...shuffleArray(others.slice())]);
+  }
+
+  for (const order of attempts) {
+    for (const orientation of ['horizontal', 'vertical']) {
+      const placements = buildCrosswordFromOrder(order, orientation);
+      if (placements) {
+        return placements;
+      }
     }
   }
 
   return null;
 }
 
-function combinations(array, size) {
-  const result = [];
 
-  function helper(start, combo) {
-    if (combo.length === size) {
-      result.push(combo.slice());
-      return;
+function chooseWordCount(currentCount, levelsPerUnit, availableCount) {
+  if (availableCount < 2) {
+    return 0;
+  }
+
+  if (availableCount === 2) {
+    return 2;
+  }
+
+  const progress = levelsPerUnit > 0 ? currentCount / levelsPerUnit : 0;
+
+  if (availableCount === 3) {
+    if (progress > 0.5) {
+      return 3;
+    }
+    return Math.random() < 0.5 ? 3 : 2;
+  }
+
+  if (progress < 0.25) {
+    return 2;
+  }
+  if (progress < 0.6) {
+    return Math.random() < 0.6 ? 3 : 2;
+  }
+
+  return Math.random() < 0.5 ? 4 : 3;
+}
+
+function selectWordCombo(words, targetSize) {
+  if (words.length < targetSize || targetSize < 2) {
+    return null;
+  }
+
+  const attempts = Math.min(words.length * 4, 100);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const shuffled = shuffleArray(words.slice());
+    const selected = [shuffled[0]];
+
+    while (selected.length < targetSize) {
+      const joinedLetters = selected.join('');
+      const candidates = shuffled.filter((word) => {
+        if (selected.includes(word)) {
+          return false;
+        }
+        return sharedLetterCount(word, joinedLetters) > 0;
+      });
+
+      if (!candidates.length) {
+        break;
+      }
+
+      candidates.sort((a, b) => {
+        const overlapA = sharedLetterCount(a, joinedLetters);
+        const overlapB = sharedLetterCount(b, joinedLetters);
+        if (overlapB !== overlapA) {
+          return overlapB - overlapA;
+        }
+        if (a.length !== b.length) {
+          return a.length - b.length;
+        }
+        return a.localeCompare(b);
+      });
+
+      const bestOverlap = sharedLetterCount(candidates[0], joinedLetters);
+      const topCandidates = candidates.filter(
+        (word) => sharedLetterCount(word, joinedLetters) === bestOverlap,
+      );
+
+      selected.push(topCandidates[Math.floor(Math.random() * topCandidates.length)]);
     }
 
-    for (let i = start; i < array.length; i += 1) {
-      combo.push(array[i]);
-      helper(i + 1, combo);
-      combo.pop();
+    if (selected.length === targetSize) {
+      const uniqueSelected = Array.from(new Set(selected));
+      if (uniqueSelected.length === targetSize) {
+        uniqueSelected.sort();
+        return uniqueSelected;
+      }
     }
   }
 
-  helper(0, []);
-  return result;
+  return null;
 }
 
 function generateLevelsForUnit(words, levelsPerUnit) {
-  const byInitial = new Map();
+  const eligibleWords = Array.from(
+    new Set(
+      words
+        .map((word) => word.trim())
+        .filter((word) => word && word.length >= 3),
+    ),
+  );
 
-  for (const word of words) {
-    if (word.length < 3) {
-      continue;
-    }
-    const initial = word[0];
-    if (!byInitial.has(initial)) {
-      byInitial.set(initial, []);
-    }
-    byInitial.get(initial).push(word);
+  const availableCount = eligibleWords.length;
+  if (availableCount < 2) {
+    return [];
   }
 
+  const desiredCandidates = Math.min(levelsPerUnit * 3, 180);
+  const combosSeen = new Set();
   const generated = [];
-  const seenCombos = new Set();
+  const maxAttempts = Math.max(levelsPerUnit * 400, 800);
 
-  for (const group of byInitial.values()) {
-    if (group.length < 2) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (generated.length >= desiredCandidates) {
+      break;
+    }
+
+    const desiredSize = chooseWordCount(generated.length, levelsPerUnit, availableCount);
+    const targetSize = Math.min(desiredSize, availableCount);
+    if (targetSize < 2) {
       continue;
     }
 
-    group.sort((a, b) => {
-      if (b.length !== a.length) {
-        return b.length - a.length;
-      }
-      return a.localeCompare(b);
-    });
-
-    for (const comboSize of [2, 3]) {
-      if (group.length < comboSize) {
-        continue;
-      }
-
-      for (const combo of combinations(group, comboSize)) {
-        const key = combo.slice().sort().join('|');
-        if (seenCombos.has(key)) {
-          continue;
-        }
-
-        const level = createLevelFromCombination(combo);
-        if (!level) {
-          continue;
-        }
-
-        seenCombos.add(key);
-        generated.push(level);
-      }
+    const combo = selectWordCombo(eligibleWords, targetSize);
+    if (!combo) {
+      continue;
     }
+
+    const key = combo.join('|');
+    if (combosSeen.has(key)) {
+      continue;
+    }
+
+    const placements = createCrossword(combo);
+    if (!placements) {
+      continue;
+    }
+
+    const solutionWords = combo.slice();
+    const level = {
+      solution_words: solutionWords,
+      grid_layout: placements,
+      letter_pool: buildLetterPool(solutionWords),
+    };
+
+    combosSeen.add(key);
+
+    const uniqueLetterCount = new Set(solutionWords.join('')).size;
+    const maxWordLength = Math.max(...solutionWords.map((word) => word.length));
+
+    generated.push({
+      level,
+      metrics: {
+        wordCount: solutionWords.length,
+        maxWordLength,
+        uniqueLetterCount,
+      },
+    });
   }
 
-  const annotated = generated.map((level) => ({
-    level,
-    maxWordLength: Math.max(...level.solution_words.map((word) => word.length)),
-  }));
+  if (!generated.length) {
+    return [];
+  }
 
-  annotated.sort((a, b) => {
-    if (a.maxWordLength !== b.maxWordLength) {
-      return a.maxWordLength - b.maxWordLength;
+  generated.sort((a, b) => {
+    if (a.metrics.wordCount !== b.metrics.wordCount) {
+      return a.metrics.wordCount - b.metrics.wordCount;
     }
-
-    const wordCountDiff = a.level.solution_words.length - b.level.solution_words.length;
-    if (wordCountDiff !== 0) {
-      return wordCountDiff;
+    if (a.metrics.maxWordLength !== b.metrics.maxWordLength) {
+      return a.metrics.maxWordLength - b.metrics.maxWordLength;
     }
-
+    if (a.metrics.uniqueLetterCount !== b.metrics.uniqueLetterCount) {
+      return a.metrics.uniqueLetterCount - b.metrics.uniqueLetterCount;
+    }
     return a.level.solution_words.join('|').localeCompare(b.level.solution_words.join('|'));
   });
 
-  const shortLevels = annotated.filter((item) => item.maxWordLength <= 4);
-  const mediumLevels = annotated.filter((item) => item.maxWordLength === 5);
-  const longLevels = annotated.filter((item) => item.maxWordLength > 5);
-
-  const takeFrom = (collection, count, target) => {
-    let remaining = count;
-    while (remaining > 0 && collection.length > 0) {
-      target.push(collection.shift().level);
-      remaining -= 1;
-    }
-    return count - remaining;
-  };
-
-  const finalLevels = [];
-  const firstLevelsLimit = Math.min(levelsPerUnit, 9);
-  takeFrom(shortLevels, firstLevelsLimit, finalLevels);
-
-  if (finalLevels.length < firstLevelsLimit) {
-    takeFrom(mediumLevels, firstLevelsLimit - finalLevels.length, finalLevels);
-  }
-  if (finalLevels.length < firstLevelsLimit) {
-    takeFrom(longLevels, firstLevelsLimit - finalLevels.length, finalLevels);
-  }
-
-  if (levelsPerUnit >= 10 && finalLevels.length < 10) {
-    if (!takeFrom(mediumLevels, 1, finalLevels)) {
-      if (!takeFrom(shortLevels, 1, finalLevels)) {
-        takeFrom(longLevels, 1, finalLevels);
-      }
-    }
-  }
-
-  const remainingLevels = [...shortLevels, ...mediumLevels, ...longLevels].map((item) => item.level);
-  for (const level of remainingLevels) {
-    if (finalLevels.length >= Math.min(levelsPerUnit, generated.length)) {
-      break;
-    }
-    finalLevels.push(level);
-  }
-
-  return finalLevels;
+  const limit = Math.min(levelsPerUnit, generated.length);
+  return generated.slice(0, limit).map((entry) => entry.level);
 }
 
 async function main() {
@@ -437,6 +606,8 @@ module.exports = {
   loadGlossary,
   normalizeWord,
   buildLetterPool,
-  findPlacement,
+  sharedLetterCount,
+  haveSharedLetters,
+  createCrossword,
   generateLevelsForUnit,
 };
