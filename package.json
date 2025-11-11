@@ -5,6 +5,8 @@
   "main": "generate_puzzles.js",
   "scripts": {
     "generate": "node generate_puzzles.js",
+    "generate:glossary": "node generate_puzzles.js --glossary span10011002.json --levels 40",
+    "generate:url": "node generate_puzzles.js --glossary https://raw.githubusercontent.com/balpomorelitm/word-connect-spanish/main/span10011002.json --levels 40",
     "serve": "python -m http.server 8000",
     "test": "echo \"No tests yet\" && exit 0"
   },
