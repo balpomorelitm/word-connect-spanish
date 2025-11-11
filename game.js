@@ -10,8 +10,7 @@ let gameState = {
     selectedLetters: [],
     levelData: null,
     allLevels: null,
-    dictionary: [],
-    externalDictionary: null // Para el diccionario externo
+    dictionary: []
 };
 
 const HINT_WORDS_REQUIRED = 10; // Palabras bonus necesarias para una pista
@@ -20,7 +19,6 @@ const BONUS_POINTS_PER_WORD = 10;
 // Initialize game on page load
 document.addEventListener('DOMContentLoaded', async () => {
     await loadGameData();
-    await loadExternalDictionary();
     loadProgress();
     initGame();
     setupEventListeners();
@@ -44,43 +42,44 @@ async function loadGameData() {
     }
 }
 
-// Load external dictionary (usando FreeDictionaryAPI)
-async function loadExternalDictionary() {
-    try {
-        // Creamos un set con palabras comunes del español para validación rápida
-        // En producción, esto se conectaría a una API real
-        gameState.externalDictionary = new Set([
-            // Este es un placeholder - la validación real usará la API
-        ]);
-        console.log('External dictionary initialized');
-    } catch (error) {
-        console.error('Error loading external dictionary:', error);
+// Validar palabra española usando MyMemory Translation API
+async function isValidSpanishWord(word) {
+    const wordLower = word.toLowerCase();
+    
+    // Primero verificar el diccionario local
+    if (gameState.dictionary.includes(wordLower)) {
+        return true;
     }
-}
-
-// Validar palabra contra diccionario externo
-async function checkExternalDictionary(word) {
+    
     try {
-        // Intentamos usar la API de diccionario libre
-        const normalizedWord = word.toLowerCase();
+        // Usar MyMemory API para validación
+        const mymemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(wordLower)}&langpair=es|en`;
+        const mymemoryResponse = await fetch(mymemoryUrl);
         
-        // Primero verificamos nuestro diccionario local
-        if (gameState.dictionary.includes(normalizedWord)) {
-            return true;
-        }
-        
-        // Luego intentamos con una API externa (sin CORS)
-        // Usamos la Spanish Dictionary API
-        const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/es/${normalizedWord}`);
-        
-        if (response.ok) {
-            return true;
+        if (mymemoryResponse.ok) {
+            const mymemoryData = await mymemoryResponse.json();
+            
+            if (mymemoryData.responseStatus === 200) {
+                const translation = mymemoryData.responseData.translatedText.toLowerCase();
+                
+                // Validar que sea una traducción válida
+                const isValidTranslation = translation !== wordLower &&
+                                         translation.length > 0 &&
+                                         !translation.includes('no found') &&
+                                         !translation.includes('not found') &&
+                                         !translation.includes('error') &&
+                                         !translation.includes('invalid');
+                
+                return isValidTranslation;
+            }
         }
         
         return false;
+        
     } catch (error) {
-        // Si hay error de red, usamos solo nuestro diccionario local
-        return gameState.dictionary.includes(word.toLowerCase());
+        console.error('Error validating word:', error);
+        // Si hay error de red, usar solo el diccionario local
+        return false;
     }
 }
 
@@ -346,7 +345,7 @@ async function validateWord(submittedWord) {
     
     // Check if it's a bonus word (minimum 3 letters)
     if (submittedWord.length >= 3) {
-        const isValid = await checkExternalDictionary(submittedWord);
+        const isValid = await isValidSpanishWord(submittedWord);
         
         if (isValid) {
             if (gameState.foundBonusWords.includes(submittedWord)) {
