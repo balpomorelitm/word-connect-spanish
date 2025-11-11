@@ -1,0 +1,105 @@
+{
+  "unit_1": [
+    {
+      "level_id": "u1_l1",
+      "solution_words": ["SOL", "SAL"],
+      "letter_pool": ["S", "O", "L", "A"],
+      "grid_layout": [
+        { "word": "SOL", "start_x": 1, "start_y": 0, "direction": "vertical" },
+        { "word": "SAL", "start_x": 0, "start_y": 1, "direction": "horizontal" }
+      ]
+    },
+    {
+      "level_id": "u1_l2",
+      "solution_words": ["PAN", "PAZ", "ANA"],
+      "letter_pool": ["P", "A", "N", "Z"],
+      "grid_layout": [
+        { "word": "PAN", "start_x": 0, "start_y": 0, "direction": "horizontal" },
+        { "word": "PAZ", "start_x": 0, "start_y": 2, "direction": "horizontal" },
+        { "word": "ANA", "start_x": 1, "start_y": 0, "direction": "vertical" }
+      ]
+    },
+    {
+      "level_id": "u1_l3",
+      "solution_words": ["MAR", "RAM", "MAL"],
+      "letter_pool": ["M", "A", "R", "L"],
+      "grid_layout": [
+        { "word": "MAR", "start_x": 0, "start_y": 0, "direction": "horizontal" },
+        { "word": "RAM", "start_x": 2, "start_y": 0, "direction": "vertical" },
+        { "word": "MAL", "start_x": 0, "start_y": 2, "direction": "horizontal" }
+      ]
+    },
+    {
+      "level_id": "u1_l4",
+      "solution_words": ["RIO", "ORO", "OIR"],
+      "letter_pool": ["R", "I", "O"],
+      "grid_layout": [
+        { "word": "RIO", "start_x": 0, "start_y": 0, "direction": "horizontal" },
+        { "word": "ORO", "start_x": 2, "start_y": 0, "direction": "vertical" },
+        { "word": "OIR", "start_x": 0, "start_y": 2, "direction": "horizontal" }
+      ]
+    },
+    {
+      "level_id": "u1_l5",
+      "solution_words": ["VOZ", "VIA", "ZOO"],
+      "letter_pool": ["V", "O", "Z", "I", "A"],
+      "grid_layout": [
+        { "word": "VOZ", "start_x": 0, "start_y": 0, "direction": "vertical" },
+        { "word": "VIA", "start_x": 0, "start_y": 0, "direction": "horizontal" },
+        { "word": "ZOO", "start_x": 0, "start_y": 2, "direction": "horizontal" }
+      ]
+    }
+  ],
+  "unit_2": [
+    {
+      "level_id": "u2_l1",
+      "solution_words": ["CASA", "COSA", "ALA"],
+      "letter_pool": ["C", "A", "S", "O", "L"],
+      "grid_layout": [
+        { "word": "CASA", "start_x": 0, "start_y": 0, "direction": "horizontal" },
+        { "word": "COSA", "start_x": 0, "start_y": 0, "direction": "vertical" },
+        { "word": "ALA", "start_x": 3, "start_y": 0, "direction": "vertical" }
+      ]
+    },
+    {
+      "level_id": "u2_l2",
+      "solution_words": ["MESA", "MASA", "MAR"],
+      "letter_pool": ["M", "E", "S", "A", "R"],
+      "grid_layout": [
+        { "word": "MESA", "start_x": 0, "start_y": 0, "direction": "vertical" },
+        { "word": "MASA", "start_x": 0, "start_y": 0, "direction": "horizontal" },
+        { "word": "MAR", "start_x": 0, "start_y": 2, "direction": "horizontal" }
+      ]
+    },
+    {
+      "level_id": "u2_l3",
+      "solution_words": ["PISO", "PASO", "OSO"],
+      "letter_pool": ["P", "I", "S", "O", "A"],
+      "grid_layout": [
+        { "word": "PISO", "start_x": 0, "start_y": 0, "direction": "horizontal" },
+        { "word": "PASO", "start_x": 0, "start_y": 2, "direction": "horizontal" },
+        { "word": "OSO", "start_x": 3, "start_y": 0, "direction": "vertical" }
+      ]
+    },
+    {
+      "level_id": "u2_l4",
+      "solution_words": ["MANO", "MONO", "ANA"],
+      "letter_pool": ["M", "A", "N", "O"],
+      "grid_layout": [
+        { "word": "MANO", "start_x": 0, "start_y": 0, "direction": "vertical" },
+        { "word": "MONO", "start_x": 0, "start_y": 0, "direction": "horizontal" },
+        { "word": "ANA", "start_x": 1, "start_y": 2, "direction": "horizontal" }
+      ]
+    },
+    {
+      "level_id": "u2_l5",
+      "solution_words": ["GATO", "TACO", "OCA"],
+      "letter_pool": ["G", "A", "T", "O", "C"],
+      "grid_layout": [
+        { "word": "GATO", "start_x": 0, "start_y": 0, "direction": "horizontal" },
+        { "word": "TACO", "start_x": 2, "start_y": 0, "direction": "vertical" },
+        { "word": "OCA", "start_x": 2, "start_y": 2, "direction": "horizontal" }
+      ]
+    }
+  ]
+}
