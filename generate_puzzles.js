@@ -325,19 +325,65 @@ function generateLevelsForUnit(words, levelsPerUnit) {
     }
   }
 
-  generated.sort((a, b) => {
-    const lengthDiff = b.solution_words[0].length - a.solution_words[0].length;
-    if (lengthDiff !== 0) {
-      return lengthDiff;
+  const annotated = generated.map((level) => ({
+    level,
+    maxWordLength: Math.max(...level.solution_words.map((word) => word.length)),
+  }));
+
+  annotated.sort((a, b) => {
+    if (a.maxWordLength !== b.maxWordLength) {
+      return a.maxWordLength - b.maxWordLength;
     }
-    return a.solution_words.join('|').localeCompare(b.solution_words.join('|'));
+
+    const wordCountDiff = a.level.solution_words.length - b.level.solution_words.length;
+    if (wordCountDiff !== 0) {
+      return wordCountDiff;
+    }
+
+    return a.level.solution_words.join('|').localeCompare(b.level.solution_words.join('|'));
   });
 
-  if (generated.length <= levelsPerUnit) {
-    return generated.slice();
+  const shortLevels = annotated.filter((item) => item.maxWordLength <= 4);
+  const mediumLevels = annotated.filter((item) => item.maxWordLength === 5);
+  const longLevels = annotated.filter((item) => item.maxWordLength > 5);
+
+  const takeFrom = (collection, count, target) => {
+    let remaining = count;
+    while (remaining > 0 && collection.length > 0) {
+      target.push(collection.shift().level);
+      remaining -= 1;
+    }
+    return count - remaining;
+  };
+
+  const finalLevels = [];
+  const firstLevelsLimit = Math.min(levelsPerUnit, 9);
+  takeFrom(shortLevels, firstLevelsLimit, finalLevels);
+
+  if (finalLevels.length < firstLevelsLimit) {
+    takeFrom(mediumLevels, firstLevelsLimit - finalLevels.length, finalLevels);
+  }
+  if (finalLevels.length < firstLevelsLimit) {
+    takeFrom(longLevels, firstLevelsLimit - finalLevels.length, finalLevels);
   }
 
-  return generated.slice(0, levelsPerUnit);
+  if (levelsPerUnit >= 10 && finalLevels.length < 10) {
+    if (!takeFrom(mediumLevels, 1, finalLevels)) {
+      if (!takeFrom(shortLevels, 1, finalLevels)) {
+        takeFrom(longLevels, 1, finalLevels);
+      }
+    }
+  }
+
+  const remainingLevels = [...shortLevels, ...mediumLevels, ...longLevels].map((item) => item.level);
+  for (const level of remainingLevels) {
+    if (finalLevels.length >= Math.min(levelsPerUnit, generated.length)) {
+      break;
+    }
+    finalLevels.push(level);
+  }
+
+  return finalLevels;
 }
 
 async function main() {
