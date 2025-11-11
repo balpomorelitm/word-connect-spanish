@@ -3,20 +3,24 @@ let gameState = {
     currentUnit: 1,
     currentLevel: 0,
     bonusPoints: 0,
+    bonusWordCount: 0, // Contador de palabras bonus para pistas
     foundWords: [],
     foundBonusWords: [],
     currentWord: '',
     selectedLetters: [],
     levelData: null,
     allLevels: null,
-    dictionary: []
+    dictionary: [],
+    externalDictionary: null // Para el diccionario externo
 };
 
-const HINT_COST = 50;
+const HINT_WORDS_REQUIRED = 10; // Palabras bonus necesarias para una pista
+const BONUS_POINTS_PER_WORD = 10;
 
 // Initialize game on page load
 document.addEventListener('DOMContentLoaded', async () => {
     await loadGameData();
+    await loadExternalDictionary();
     loadProgress();
     initGame();
     setupEventListeners();
@@ -40,6 +44,46 @@ async function loadGameData() {
     }
 }
 
+// Load external dictionary (usando FreeDictionaryAPI)
+async function loadExternalDictionary() {
+    try {
+        // Creamos un set con palabras comunes del español para validación rápida
+        // En producción, esto se conectaría a una API real
+        gameState.externalDictionary = new Set([
+            // Este es un placeholder - la validación real usará la API
+        ]);
+        console.log('External dictionary initialized');
+    } catch (error) {
+        console.error('Error loading external dictionary:', error);
+    }
+}
+
+// Validar palabra contra diccionario externo
+async function checkExternalDictionary(word) {
+    try {
+        // Intentamos usar la API de diccionario libre
+        const normalizedWord = word.toLowerCase();
+        
+        // Primero verificamos nuestro diccionario local
+        if (gameState.dictionary.includes(normalizedWord)) {
+            return true;
+        }
+        
+        // Luego intentamos con una API externa (sin CORS)
+        // Usamos la Spanish Dictionary API
+        const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/es/${normalizedWord}`);
+        
+        if (response.ok) {
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        // Si hay error de red, usamos solo nuestro diccionario local
+        return gameState.dictionary.includes(word.toLowerCase());
+    }
+}
+
 // Load progress from localStorage
 function loadProgress() {
     const savedProgress = localStorage.getItem('wordConnectProgress');
@@ -48,8 +92,10 @@ function loadProgress() {
         gameState.currentUnit = progress.currentUnit || 1;
         gameState.currentLevel = progress.currentLevel || 0;
         gameState.bonusPoints = progress.bonusPoints || 0;
+        gameState.bonusWordCount = progress.bonusWordCount || 0;
     }
     updateScore();
+    updateBonusProgress();
 }
 
 // Save progress to localStorage
@@ -57,8 +103,19 @@ function saveProgress() {
     localStorage.setItem('wordConnectProgress', JSON.stringify({
         currentUnit: gameState.currentUnit,
         currentLevel: gameState.currentLevel,
-        bonusPoints: gameState.bonusPoints
+        bonusPoints: gameState.bonusPoints,
+        bonusWordCount: gameState.bonusWordCount
     }));
+}
+
+// Reset game to beginning
+function resetGame() {
+    gameState.currentUnit = 1;
+    gameState.currentLevel = 0;
+    gameState.bonusPoints = 0;
+    gameState.bonusWordCount = 0;
+    saveProgress();
+    initGame();
 }
 
 // Initialize game for current level
@@ -82,6 +139,7 @@ function initGame() {
     drawLetterPool();
     clearCurrentWord();
     hideBonusDisplay();
+    updateBonusProgress();
 }
 
 // Update level and progress display
@@ -96,6 +154,27 @@ function updateProgress() {
     const total = gameState.levelData.solution_words.length;
     const found = gameState.foundWords.length;
     document.getElementById('progress').textContent = `${found}/${total} palabras`;
+}
+
+// Update bonus progress bar
+function updateBonusProgress() {
+    const count = gameState.bonusWordCount;
+    const percentage = (count / HINT_WORDS_REQUIRED) * 100;
+    
+    document.getElementById('bonus-count').textContent = count;
+    document.getElementById('bonus-progress-fill').style.width = `${percentage}%`;
+    
+    // Actualizar botón de pista
+    const hintBtn = document.getElementById('hint-button');
+    hintBtn.disabled = count < HINT_WORDS_REQUIRED;
+    
+    // Efecto visual cuando está completo
+    const progressBar = document.querySelector('.bonus-progress-bar');
+    if (count >= HINT_WORDS_REQUIRED) {
+        progressBar.classList.add('complete');
+    } else {
+        progressBar.classList.remove('complete');
+    }
 }
 
 // Draw the crossword grid
@@ -196,6 +275,27 @@ function setupEventListeners() {
     document.getElementById('submit-button').addEventListener('click', submitWord);
     document.getElementById('hint-button').addEventListener('click', useHint);
     document.getElementById('next-level-button').addEventListener('click', nextLevel);
+    
+    // New game button
+    document.getElementById('new-game-button').addEventListener('click', showNewGameModal);
+    document.getElementById('confirm-new-game').addEventListener('click', confirmNewGame);
+    document.getElementById('cancel-new-game').addEventListener('click', hideNewGameModal);
+}
+
+// Show new game confirmation modal
+function showNewGameModal() {
+    document.getElementById('new-game-modal').classList.remove('hidden');
+}
+
+// Hide new game modal
+function hideNewGameModal() {
+    document.getElementById('new-game-modal').classList.add('hidden');
+}
+
+// Confirm new game
+function confirmNewGame() {
+    hideNewGameModal();
+    resetGame();
 }
 
 // Select a letter
@@ -225,15 +325,15 @@ function updateCurrentWordDisplay() {
 }
 
 // Submit word for validation
-function submitWord() {
+async function submitWord() {
     if (gameState.currentWord.length === 0) return;
     
     const word = gameState.currentWord.toUpperCase();
-    validateWord(word);
+    await validateWord(word);
 }
 
 // Validate submitted word
-function validateWord(submittedWord) {
+async function validateWord(submittedWord) {
     // Check if it's a puzzle word
     if (gameState.levelData.solution_words.includes(submittedWord)) {
         if (gameState.foundWords.includes(submittedWord)) {
@@ -244,14 +344,18 @@ function validateWord(submittedWord) {
         return;
     }
     
-    // Check if it's a bonus word
-    if (gameState.dictionary.includes(submittedWord.toLowerCase())) {
-        if (gameState.foundBonusWords.includes(submittedWord)) {
-            showError('¡Ya encontraste esta palabra bonus!');
-        } else {
-            foundBonusWord(submittedWord);
+    // Check if it's a bonus word (minimum 3 letters)
+    if (submittedWord.length >= 3) {
+        const isValid = await checkExternalDictionary(submittedWord);
+        
+        if (isValid) {
+            if (gameState.foundBonusWords.includes(submittedWord)) {
+                showError('¡Ya encontraste esta palabra extra!');
+            } else {
+                foundBonusWord(submittedWord);
+            }
+            return;
         }
-        return;
     }
     
     // Invalid word
@@ -286,22 +390,44 @@ function fillGridWord(word) {
 // Handle found bonus word
 function foundBonusWord(word) {
     gameState.foundBonusWords.push(word);
-    gameState.bonusPoints += 10;
+    gameState.bonusPoints += BONUS_POINTS_PER_WORD;
+    gameState.bonusWordCount += 1;
+    
     updateScore();
+    updateBonusProgress();
     saveProgress();
+    
     showBonusMessage(word);
     clearCurrentWord();
+    
+    // Animación especial cuando se completa la barra
+    if (gameState.bonusWordCount % HINT_WORDS_REQUIRED === 0) {
+        showHintReadyMessage();
+    }
 }
 
 // Show bonus message
 function showBonusMessage(word) {
     const bonusDisplay = document.getElementById('bonus-display');
-    bonusDisplay.textContent = `¡Palabra extra: ${word}! +10 puntos`;
+    bonusDisplay.textContent = `¡Palabra extra: ${word}! +${BONUS_POINTS_PER_WORD} puntos`;
+    bonusDisplay.style.background = '#4caf50';
     bonusDisplay.classList.remove('hidden');
     
     setTimeout(() => {
         bonusDisplay.classList.add('hidden');
     }, 2000);
+}
+
+// Show hint ready message
+function showHintReadyMessage() {
+    const bonusDisplay = document.getElementById('bonus-display');
+    bonusDisplay.textContent = '¡Pista desbloqueada! 💡 Puedes revelar una casilla';
+    bonusDisplay.style.background = '#ff9800';
+    bonusDisplay.classList.remove('hidden');
+    
+    setTimeout(() => {
+        bonusDisplay.classList.add('hidden');
+    }, 3000);
 }
 
 // Hide bonus display
@@ -329,26 +455,39 @@ function showError(message) {
 // Update score display
 function updateScore() {
     document.getElementById('score').textContent = gameState.bonusPoints;
-    
-    const hintBtn = document.getElementById('hint-button');
-    hintBtn.disabled = gameState.bonusPoints < HINT_COST;
 }
 
-// Use hint
+// Use hint - reveal a random cell
 function useHint() {
-    if (gameState.bonusPoints < HINT_COST) return;
+    if (gameState.bonusWordCount < HINT_WORDS_REQUIRED) return;
     
     // Find an unfilled cell
     const cells = Array.from(document.querySelectorAll('.grid-cell:not(.filled):not(.empty)'));
-    if (cells.length === 0) return;
+    if (cells.length === 0) {
+        showError('¡Ya están todas las casillas reveladas!');
+        return;
+    }
     
+    // Reveal a random cell
     const randomCell = cells[Math.floor(Math.random() * cells.length)];
     randomCell.textContent = randomCell.dataset.letter;
     randomCell.classList.add('filled');
+    randomCell.classList.add('hint-revealed');
     
-    gameState.bonusPoints -= HINT_COST;
-    updateScore();
+    // Deduct bonus words
+    gameState.bonusWordCount -= HINT_WORDS_REQUIRED;
+    updateBonusProgress();
     saveProgress();
+    
+    // Show feedback
+    const bonusDisplay = document.getElementById('bonus-display');
+    bonusDisplay.textContent = `¡Letra revelada! ${randomCell.dataset.letter}`;
+    bonusDisplay.style.background = '#4a90e2';
+    bonusDisplay.classList.remove('hidden');
+    
+    setTimeout(() => {
+        bonusDisplay.classList.add('hidden');
+    }, 2000);
 }
 
 // Show level complete modal
@@ -357,7 +496,7 @@ function showLevelComplete() {
     document.getElementById('words-found').textContent = gameState.foundWords.length;
     document.getElementById('bonus-found').textContent = gameState.foundBonusWords.length;
     document.getElementById('points-earned').textContent = 
-        `${gameState.foundBonusWords.length * 10} puntos bonus`;
+        `${gameState.foundBonusWords.length * BONUS_POINTS_PER_WORD} puntos bonus`;
     
     modal.classList.remove('hidden');
 }
