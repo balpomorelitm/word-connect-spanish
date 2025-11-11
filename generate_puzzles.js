@@ -1,397 +1,325 @@
-/**
- * Puzzle Generator for Word Connect Game
- * 
- * Reads vocabulary from span10011002.json glossary file
- * Filters simple lexical units (no spaces, articles, or compound forms)
- * Generates crossword puzzles with valid letter intersections only
- * Creates proper letter pools with all necessary repetitions
- * 
- * Run with: node generate_puzzles.js
- * Or with custom glossary: node generate_puzzles.js --glossary span10011002.json --levels 40
- */
+// generate_puzzles.js
+// Generador de puzzles mejorado para Word Connect Spanish
+// Cambios principales:
+// - Solo permite cruces en letras IDÉNTICAS
+// - Pool de letras respeta repeticiones (no usa Set)
+// - Lee span10011002.json y filtra lexías simples
+// - Genera dictionary.json automáticamente
 
 const fs = require('fs');
 const https = require('https');
-const http = require('http');
-
-// Configuration
-const CONFIG = {
-    MIN_WORDS_PER_PUZZLE: 2,
-    MAX_WORDS_PER_PUZZLE: 3,
-    MAX_ATTEMPTS: 100,
-    DISTRACTOR_LETTERS: 1,
-    DEFAULT_LEVELS_PER_UNIT: 40
-};
 
 /**
- * Fetch content from URL (supports http and https)
+ * Descarga contenido de URL usando https
  */
-function fetchUrl(url) {
-    return new Promise((resolve, reject) => {
-        const client = url.startsWith('https') ? https : http;
-        client.get(url, res => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => resolve(data));
-        }).on('error', reject);
-    });
+function fetchRaw(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
 }
 
 /**
- * Normalize a word from glossary:
- * - Remove leading articles (el, la, los, las)
- * - Take only first form in cases like "niño/niña"
- * - Discard phrases with spaces (collocations)
- * - Remove punctuation
- * - Convert to uppercase
- * Returns null if word should be excluded
+ * Normaliza una palabra del glosario:
+ * - Elimina artículos iniciales (el, la, los, las)
+ * - Toma solo la primera forma (niño/niña -> niño)
+ * - Descarta colocaciones (palabras con espacios)
+ * - Convierte a mayúsculas
+ * - Elimina puntuación
  */
-function normalizeWord(rawWord) {
-    if (!rawWord || typeof rawWord !== 'string') return null;
-    
-    let word = rawWord.trim();
-    
-    // Remove leading articles
-    word = word.replace(/^(el|la|los|las)\s+/i, '');
-    
-    // Take only first form (before slash)
-    word = word.split('/')[0].trim();
-    
-    // Discard if contains spaces (collocations/phrases)
-    if (/\s/.test(word)) return null;
-    
-    // Remove punctuation
-    word = word.replace(/["'().,;:!?¡¿\-]/g, '');
-    
-    // Must have at least 3 letters for crossword
-    if (word.length < 3) return null;
-    
-    return word.toUpperCase();
+function normalizeWord(word) {
+  if (!word || typeof word !== 'string') return null;
+  
+  let normalized = word.trim();
+  
+  // Quitar artículos iniciales
+  normalized = normalized.replace(/^(el|la|los|las)\s+/i, '');
+  
+  // Tomar solo primera forma (niño/niña -> niño)
+  normalized = normalized.split('/')[0];
+  
+  // Descartar colocaciones (palabras con espacios)
+  if (/\s/.test(normalized)) return null;
+  
+  // Eliminar puntuación
+  normalized = normalized.replace(/[\"'().,;:!?¡¿\-]/g, '');
+  
+  return normalized.toUpperCase();
 }
 
 /**
- * Load glossary from local file or URL
- * Returns object mapping unit numbers to arrays of normalized words
+ * Carga el glosario desde archivo local o URL
+ * Retorna objeto con palabras organizadas por unidad
  */
-async function loadGlossary(source, unitKey = '_', lemmaKey = 'Unidad Léxica (Español)') {
-    console.log(`Loading glossary from: ${source}`);
+async function loadGlossary(source, unitKey = 'unidad', lemmaKey = 'lema') {
+  // Determinar si es URL o archivo local
+  const rawContent = /^https?:/.test(source)
+    ? await fetchRaw(source)
+    : fs.readFileSync(source, 'utf8');
+  
+  const json = JSON.parse(rawContent);
+  const items = Array.isArray(json) ? json : (json.items || json.data || []);
+  
+  const byUnit = {};
+  
+  for (const item of items) {
+    const unit = String(item[unitKey] ?? '1').trim();
+    const lemma = item[lemmaKey] ?? item.palabra ?? item.entrada ?? item.term;
+    const word = normalizeWord(lemma);
     
-    let rawData;
-    if (/^https?:\/\//i.test(source)) {
-        rawData = await fetchUrl(source);
-    } else {
-        rawData = fs.readFileSync(source, 'utf8');
-    }
+    if (!word) continue;
     
-    const json = JSON.parse(rawData);
-    const items = Array.isArray(json) ? json : (json.items || json.data || []);
-    
-    console.log(`Loaded ${items.length} entries from glossary`);
-    
-    const byUnit = {};
-    let totalFiltered = 0;
-    
-    for (const item of items) {
-        // Extract unit number from the _ field (e.g., "3" from item._)
-        const unitNum = String(item[unitKey] || '1').trim();
-        
-        // Extract the Spanish lexical unit
-        const lemma = item[lemmaKey] || item.palabra || item.entrada || item.term;
-        
-        const normalized = normalizeWord(lemma);
-        if (normalized) {
-            if (!byUnit[unitNum]) byUnit[unitNum] = new Set();
-            byUnit[unitNum].add(normalized);
-            totalFiltered++;
-        }
-    }
-    
-    // Convert Sets to Arrays
-    Object.keys(byUnit).forEach(unit => {
-        byUnit[unit] = Array.from(byUnit[unit]);
-    });
-    
-    console.log(`Filtered to ${totalFiltered} simple lexical units across ${Object.keys(byUnit).length} units`);
-    
-    return byUnit;
+    if (!byUnit[unit]) byUnit[unit] = new Set();
+    byUnit[unit].add(word);
+  }
+  
+  // Convertir Sets a arrays
+  Object.keys(byUnit).forEach(key => {
+    byUnit[key] = Array.from(byUnit[key]);
+  });
+  
+  return byUnit;
 }
 
 /**
- * Build letter pool with ALL repetitions needed
- * Takes the maximum count of each letter across all words
+ * Construye pool de letras respetando repeticiones
+ * NO usa Set - cuenta el máximo de repeticiones por letra entre todas las palabras
  */
-function buildLetterPool(words, distractors = 1) {
-    const maxCounts = {};
-    
-    // Count letter frequencies in each word and take maximum
-    for (const word of words) {
-        const localCounts = {};
-        for (const letter of word) {
-            localCounts[letter] = (localCounts[letter] || 0) + 1;
-        }
-        
-        for (const [letter, count] of Object.entries(localCounts)) {
-            maxCounts[letter] = Math.max(maxCounts[letter] || 0, count);
-        }
+function buildLetterPool(words, distractorCount = 1) {
+  const maxCounts = {};
+  
+  // Contar máximo de repeticiones por letra
+  for (const word of words) {
+    const letterCounts = {};
+    for (const char of word) {
+      letterCounts[char] = (letterCounts[char] || 0) + 1;
     }
     
-    // Build pool with all repetitions
-    const pool = [];
-    for (const [letter, count] of Object.entries(maxCounts)) {
-        for (let i = 0; i < count; i++) {
-            pool.push(letter);
-        }
+    // Actualizar máximo global
+    for (const [char, count] of Object.entries(letterCounts)) {
+      maxCounts[char] = Math.max(maxCounts[char] || 0, count);
     }
-    
-    // Add distractor letters (only if not already in pool)
-    const alphabet = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
-    let added = 0;
-    while (added < distractors) {
-        const randomLetter = alphabet[Math.floor(Math.random() * alphabet.length)];
-        if (!pool.includes(randomLetter)) {
-            pool.push(randomLetter);
-            added++;
-        }
+  }
+  
+  // Construir pool con todas las repeticiones
+  const pool = [];
+  for (const [char, count] of Object.entries(maxCounts)) {
+    pool.push(...Array(count).fill(char));
+  }
+  
+  // Añadir letras distractoras (que no estén ya en el pool)
+  const alphabet = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
+  let added = 0;
+  while (added < distractorCount) {
+    const randomChar = alphabet[Math.floor(Math.random() * alphabet.length)];
+    if (!pool.includes(randomChar)) {
+      pool.push(randomChar);
+      added++;
     }
-    
-    // Shuffle pool
-    return pool.sort(() => Math.random() - 0.5);
+  }
+  
+  // Mezclar aleatoriamente
+  return pool.sort(() => Math.random() - 0.5);
 }
 
 /**
- * Layout 2-3 words in crossword pattern
- * - Place longest word horizontally at (0,0) as base
- * - Place others vertically, intersecting ONLY at identical letters
- * - Prefer intersection at first shared letter
+ * Coloca 2 o 3 palabras en layout de crucigrama
+ * Reglas:
+ * - Primera palabra (base) horizontal en (0,0)
+ * - Siguientes palabras verticales, cruzando en letras IDÉNTICAS
+ * - Prioriza cruce en letra inicial compartida
+ * - Para 3 palabras, usa columnas diferentes
  */
 function layoutTwoOrThree(words) {
-    // Sort by length to get base word (longest)
-    const sorted = words.slice().sort((a, b) => b.length - a.length);
-    const base = sorted[0];
-    const others = words.filter(w => w !== base);
-    
-    const layout = [{
-        word: base,
+  // Ordenar por longitud (más larga primero)
+  const base = words.slice().sort((a, b) => b.length - a.length)[0];
+  const others = words.filter(w => w !== base);
+  
+  const layout = [{
+    word: base,
+    start_x: 0,
+    start_y: 0,
+    direction: 'horizontal'
+  }];
+  
+  /**
+   * Coloca una palabra vertical buscando cruce en letra idéntica
+   */
+  const placeVertical = (word, avoidColumns = new Set()) => {
+    // Preferir columna 0 si la inicial coincide
+    if (word[0] === base[0] && !avoidColumns.has(0)) {
+      layout.push({
+        word: word,
         start_x: 0,
         start_y: 0,
-        direction: 'horizontal'
-    }];
-    
-    const usedColumns = new Set();
-    
-    /**
-     * Place a word vertically, intersecting with base
-     * Only allows intersection at IDENTICAL letters
-     */
-    const placeVertical = (word, avoidCols = new Set()) => {
-        // Prefer intersection at word's first letter if it appears in base
-        const firstLetter = word[0];
-        
-        // Try to intersect at first letter first
-        for (let baseIdx = 0; baseIdx < base.length; baseIdx++) {
-            if (base[baseIdx] === firstLetter && !avoidCols.has(baseIdx)) {
-                layout.push({
-                    word: word,
-                    start_x: baseIdx,
-                    start_y: 0,
-                    direction: 'vertical'
-                });
-                usedColumns.add(baseIdx);
-                return true;
-            }
-        }
-        
-        // If first letter doesn't match, try any matching letter
-        for (let wordIdx = 0; wordIdx < word.length; wordIdx++) {
-            for (let baseIdx = 0; baseIdx < base.length; baseIdx++) {
-                if (word[wordIdx] === base[baseIdx] && !avoidCols.has(baseIdx)) {
-                    layout.push({
-                        word: word,
-                        start_x: baseIdx,
-                        start_y: -wordIdx,
-                        direction: 'vertical'
-                    });
-                    usedColumns.add(baseIdx);
-                    return true;
-                }
-            }
-        }
-        
-        return false;
-    };
-    
-    // Place first vertical word
-    if (!placeVertical(others[0])) return null;
-    
-    // Place second vertical word if exists
-    if (others[1]) {
-        if (!placeVertical(others[1], usedColumns)) return null;
+        direction: 'vertical'
+      });
+      return true;
     }
     
-    return { layout };
+    // Buscar otra posición donde la inicial del vertical coincida con base
+    for (let i = 0; i < base.length; i++) {
+      if (word[0] === base[i] && !avoidColumns.has(i)) {
+        layout.push({
+          word: word,
+          start_x: i,
+          start_y: 0,
+          direction: 'vertical'
+        });
+        return true;
+      }
+    }
+    
+    return false;
+  };
+  
+  // Colocar primera vertical
+  if (!placeVertical(others[0])) return null;
+  
+  // Colocar segunda vertical si existe
+  if (others[1]) {
+    const usedColumns = new Set(
+      layout.filter(l => l.direction === 'vertical').map(l => l.start_x)
+    );
+    if (!placeVertical(others[1], usedColumns)) return null;
+  }
+  
+  return { layout };
 }
 
 /**
- * Generate a single level from a set of words
+ * Genera un nivel completo a partir de palabras
  */
 function generateLevelFrom(words) {
-    const plan = layoutTwoOrThree(words);
-    if (!plan) return null;
-    
-    return {
-        solution_words: words,
-        letter_pool: buildLetterPool(words, CONFIG.DISTRACTOR_LETTERS),
-        grid_layout: plan.layout
-    };
+  const plan = layoutTwoOrThree(words);
+  if (!plan) return null;
+  
+  return {
+    solution_words: words,
+    letter_pool: buildLetterPool(words, 1),
+    grid_layout: plan.layout
+  };
 }
 
 /**
- * Random selection helper
+ * Selecciona elemento aleatorio de array
  */
 function pick(array) {
-    return array[Math.floor(Math.random() * array.length)];
+  return array[Math.floor(Math.random() * array.length)];
 }
 
 /**
- * Generate all puzzles from glossary
- */
-async function generatePuzzlesFromGlossary(glossarySource, levelsPerUnit, unitKey, lemmaKey) {
-    const byUnit = await loadGlossary(glossarySource, unitKey, lemmaKey);
-    
-    const allLevels = {};
-    const allWords = [];
-    
-    for (const [unitNum, words] of Object.entries(byUnit)) {
-        console.log(`\nGenerating ${levelsPerUnit} puzzles for unit ${unitNum} (${words.length} words)...`);
-        
-        const pool = words.filter(w => w.length >= 3);
-        if (pool.length < 2) {
-            console.log(`  Skipped: not enough words`);
-            continue;
-        }
-        
-        const levels = [];
-        let attempts = 0;
-        const maxAttempts = levelsPerUnit * 30;
-        
-        while (levels.length < levelsPerUnit && attempts < maxAttempts) {
-            attempts++;
-            
-            // Pick base word
-            const base = pick(pool);
-            
-            // Try to find words sharing the initial letter
-            const sameInitial = pool.filter(w => w !== base && w[0] === base[0]);
-            const candidates = sameInitial.length > 0 
-                ? sameInitial 
-                : pool.filter(w => w !== base && [...w].some(ch => base.includes(ch)));
-            
-            if (candidates.length === 0) continue;
-            
-            const second = pick(candidates);
-            
-            // 50% chance to add a third word
-            const remainingCands = candidates.filter(w => w !== second);
-            const third = (Math.random() < 0.5 && remainingCands.length > 0) 
-                ? pick(remainingCands) 
-                : null;
-            
-            const wordSet = [base, second];
-            if (third) wordSet.push(third);
-            
-            // Ensure uniqueness
-            const uniqueWords = [...new Set(wordSet)];
-            if (uniqueWords.length < 2) continue;
-            
-            // Generate level
-            const level = generateLevelFrom(uniqueWords);
-            if (level) {
-                level.level_id = `u${unitNum}_l${levels.length + 1}`;
-                levels.push(level);
-                console.log(`  Level ${levels.length}/${levelsPerUnit} - Words: ${uniqueWords.join(', ')}`);
-            }
-        }
-        
-        if (levels.length < levelsPerUnit) {
-            console.log(`  Warning: Only generated ${levels.length} levels (attempted ${attempts} times)`);
-        }
-        
-        allLevels[`unit_${unitNum}`] = levels;
-        allWords.push(...pool);
-    }
-    
-    return { levels: allLevels, dictionary: allWords };
-}
-
-/**
- * Main function
+ * Función principal
  */
 async function main() {
-    console.log('=== Word Connect Puzzle Generator ===\n');
+  const args = process.argv.slice(2);
+  
+  // Helper para obtener argumentos
+  const getArg = (key, defaultValue) => {
+    const index = args.indexOf(key);
+    return index >= 0 ? args[index + 1] : defaultValue;
+  };
+  
+  const glossaryPath = getArg('--glossary', 'span10011002.json');
+  const levelsPerUnit = parseInt(getArg('--levels', '40'), 10);
+  const unitKey = getArg('--unitKey', 'unidad');
+  const lemmaKey = getArg('--lemmaKey', 'lema');
+  
+  console.log('🔄 Cargando glosario desde:', glossaryPath);
+  const wordsByUnit = await loadGlossary(glossaryPath, unitKey, lemmaKey);
+  
+  console.log('📚 Unidades encontradas:', Object.keys(wordsByUnit).length);
+  
+  const allLevels = {};
+  
+  // Generar niveles para cada unidad
+  for (const [unit, rawWords] of Object.entries(wordsByUnit)) {
+    console.log(`\n📝 Generando niveles para unidad ${unit}...`);
     
-    // Parse command line arguments
-    const args = process.argv.slice(2);
-    const getArg = (key, defaultVal) => {
-        const idx = args.indexOf(key);
-        return idx >= 0 ? args[idx + 1] : defaultVal;
-    };
+    // Filtrar palabras de al menos 3 letras
+    const pool = rawWords.filter(w => w.length >= 3);
+    console.log(`   Palabras disponibles: ${pool.length}`);
     
-    const glossarySource = getArg('--glossary', 'span10011002.json');
-    const levelsPerUnit = parseInt(getArg('--levels', String(CONFIG.DEFAULT_LEVELS_PER_UNIT)), 10);
-    const unitKey = getArg('--unitKey', '_');
-    const lemmaKey = getArg('--lemmaKey', 'Unidad Léxica (Español)');
+    const levels = [];
+    let attempts = 0;
+    const maxAttempts = levelsPerUnit * 30;
     
-    console.log('Configuration:');
-    console.log(`  Glossary source: ${glossarySource}`);
-    console.log(`  Levels per unit: ${levelsPerUnit}`);
-    console.log(`  Words per puzzle: ${CONFIG.MIN_WORDS_PER_PUZZLE}-${CONFIG.MAX_WORDS_PER_PUZZLE}`);
-    console.log(`  Distractor letters: ${CONFIG.DISTRACTOR_LETTERS}`);
-    console.log('');
-    
-    try {
-        // Generate puzzles from glossary
-        const { levels, dictionary } = await generatePuzzlesFromGlossary(
-            glossarySource,
-            levelsPerUnit,
-            unitKey,
-            lemmaKey
-        );
-        
-        // Save levels
-        const levelsFile = 'levels_generated.json';
-        fs.writeFileSync(levelsFile, JSON.stringify(levels, null, 2));
-        console.log(`\n✓ Levels saved to: ${levelsFile}`);
-        
-        // Save dictionary (all simple lexical units in lowercase for bonus validation)
-        const uniqueDict = [...new Set(dictionary)].map(w => w.toLowerCase()).sort();
-        fs.writeFileSync('dictionary.json', JSON.stringify(uniqueDict, null, 2));
-        console.log(`✓ Dictionary saved with ${uniqueDict.length} words`);
-        
-        // Statistics
-        let totalLevels = 0;
-        Object.values(levels).forEach(unitLevels => {
-            totalLevels += unitLevels.length;
-        });
-        
-        console.log(`\n=== Generation Complete ===`);
-        console.log(`Total units: ${Object.keys(levels).length}`);
-        console.log(`Total levels: ${totalLevels}`);
-        console.log(`\nNext steps:`);
-        console.log(`  1. Review levels_generated.json`);
-        console.log(`  2. Copy to levels.json: cp levels_generated.json levels.json`);
-        console.log(`  3. Reload the game to test new puzzles`);
-        
-    } catch (error) {
-        console.error('\n❌ Error generating puzzles:');
-        console.error(error.message);
-        console.error('\nMake sure the glossary file exists and is valid JSON.');
-        process.exit(1);
+    while (levels.length < levelsPerUnit && attempts < maxAttempts) {
+      attempts++;
+      
+      // Elegir palabra base
+      const base = pick(pool);
+      
+      // Buscar palabras con misma inicial (mejor para cruces)
+      const sameInitial = pool.filter(w => w !== base && w[0] === base[0]);
+      
+      // Si no hay con misma inicial, buscar cualquiera con letra compartida
+      const candidates = sameInitial.length
+        ? sameInitial
+        : pool.filter(w => w !== base && [...w].some(ch => base.includes(ch)));
+      
+      if (!candidates.length) continue;
+      
+      const second = pick(candidates);
+      
+      // 50% probabilidad de añadir tercera palabra
+      const third = Math.random() < 0.5
+        ? pick(candidates.filter(w => w !== second))
+        : null;
+      
+      const wordSet = [base, second].concat(third ? [third] : []);
+      const uniqueWords = [...new Set(wordSet)];
+      
+      if (uniqueWords.length < 2) continue;
+      
+      const level = generateLevelFrom(uniqueWords);
+      if (level) {
+        level.level_id = `u${unit}_l${levels.length + 1}`;
+        levels.push(level);
+      }
     }
+    
+    console.log(`   ✅ Generados ${levels.length} niveles`);
+    allLevels[`unit_${unit}`] = levels;
+  }
+  
+  // Guardar niveles generados
+  fs.writeFileSync(
+    'levels_generated.json',
+    JSON.stringify(allLevels, null, 2)
+  );
+  console.log('\n✅ Archivo generado: levels_generated.json');
+  
+  // Generar diccionario de bonus words
+  const allWords = Object.values(wordsByUnit)
+    .flat()
+    .map(w => w.toLowerCase());
+  const dictionary = [...new Set(allWords)].sort();
+  
+  fs.writeFileSync(
+    'dictionary.json',
+    JSON.stringify(dictionary, null, 2)
+  );
+  console.log('✅ Archivo generado: dictionary.json');
+  console.log(`📊 Total de palabras en diccionario: ${dictionary.length}`);
+  
+  console.log('\n🎉 ¡Listo! Puedes copiar levels_generated.json a levels.json');
 }
 
-// Run if called directly
+// Ejecutar si es el archivo principal
 if (require.main === module) {
-    main();
+  main().catch(err => {
+    console.error('❌ Error:', err);
+    process.exit(1);
+  });
 }
 
-module.exports = { loadGlossary, normalizeWord, buildLetterPool, layoutTwoOrThree, generateLevelFrom };
+module.exports = {
+  normalizeWord,
+  loadGlossary,
+  buildLetterPool,
+  generateLevelFrom
+};
