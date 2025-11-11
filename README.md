@@ -57,96 +57,69 @@ word-connect-spanish/
 ├── index.html          # Main game interface
 ├── style.css           # Styling and animations
 ├── game.js             # Game logic and mechanics
-├── levels.json         # Puzzle definitions (10 sample levels)
-├── dictionary.json     # Spanish word list for bonus validation
-├── generate_puzzles.js # Automated puzzle generator tool
+├── levels.json         # Auto-generated puzzle definitions por unidad
+├── dictionary.json     # Lexías simples (minúsculas) para palabras bonus
+├── generate_puzzles.js # Generador de niveles basado en el glosario oficial
 ├── README.md           # This file
 ```
 
-## 🎯 Creating Your Own Puzzles
+## 🧩 Puzzle & Dictionary Generation
 
-### Option 1: Manual Creation
+The automated generator builds both the playable levels and the bonus-word dictionary directly from the official course glossary `span10011002.json`.
 
-Edit `levels.json` directly. Each level follows this structure:
+### Glossary structure
+
+`span10011002.json` contains an array of entries similar to:
 
 ```json
 {
-  "level_id": "u1_l1",
-  "solution_words": ["SOL", "SAL"],
-  "letter_pool": ["S", "O", "L", "A"],
-  "grid_layout": [
-    {
-      "word": "SOL",
-      "start_x": 1,
-      "start_y": 0,
-      "direction": "vertical"
-    },
-    {
-      "word": "SAL",
-      "start_x": 0,
-      "start_y": 1,
-      "direction": "horizontal"
-    }
-  ]
+  "_": "5",
+  "Unidad Léxica (Español)": "EL LIBRO",
+  "Traducción (Inglés)": "THE BOOK",
+  "Parte del discurso": "Sustantivo"
+  // …otros metadatos
 }
 ```
 
-### Option 2: Automated Generation
+- `"_"` identifica la unidad didáctica.
+- `"Unidad Léxica (Español)"` almacena la lexía en español.
+- El script también acepta los campos `palabra`, `entrada`, `term` o `lema` si están presentes.
 
-Use the puzzle generator tool to create levels automatically:
+### Normalización de lexías
 
-1. **Install Node.js** (if not already installed)
+`generate_puzzles.js` filtra el glosario para obtener **lexías simples** listas para usar en el juego:
 
-2. **Customize word lists** in `generate_puzzles.js`:
-   ```javascript
-   const WORD_LISTS = {
-     unit_1: ['SOL', 'SAL', 'PAN', 'PAZ', ...],
-     unit_2: ['CASA', 'MESA', 'COSA', ...],
-     // Add more units...
-   };
-   ```
+1. Elimina artículos iniciales (`el`, `la`, `los`, `las`).
+2. Usa solo la primera forma en variantes como `niño/niña`.
+3. Descarta cualquier entrada con espacios (colocaciones o frases hechas).
+4. Limpia signos de puntuación y convierte todo a mayúsculas.
+5. Conserva únicamente caracteres alfabéticos españoles (`A-Z` y `Ñ`).
 
-3. **Run the generator**:
-   ```bash
-   node generate_puzzles.js
-   ```
+El resultado se agrupa por unidad para construir niveles coherentes y se guarda en `dictionary.json` (en minúsculas) para validar palabras bonus.
 
-4. **Use generated puzzles**:
-   - Output saved to `levels_generated.json`
-   - Copy content to `levels.json` or rename the file
+### Generar nuevos niveles
 
-### Generator Configuration
+Ejecuta el generador con Node.js para crear entre 30 y 40 niveles por unidad (40 por defecto) y un diccionario actualizado:
 
-Adjust settings in `generate_puzzles.js`:
-
-```javascript
-const CONFIG = {
-    MIN_WORDS_PER_PUZZLE: 3,    // Minimum words per level
-    MAX_WORDS_PER_PUZZLE: 5,    // Maximum words per level
-    MAX_ATTEMPTS: 100,          // Attempts before giving up
-    DISTRACTOR_LETTERS: 1,      // Extra letters in pool
-};
+```bash
+node generate_puzzles.js --glossary span10011002.json --levels 40
 ```
 
-## 📝 Expanding the Dictionary
+Atajos disponibles en `package.json`:
 
-Add more Spanish words to `dictionary.json` for bonus word validation:
-
-```json
-[
-  "sol",
-  "casa",
-  "mesa",
-  "gato",
-  "perro",
-  // Add your words here...
-]
+```bash
+npm run generate               # Usa la configuración por defecto
+npm run generate:glossary      # Usa span10011002.json con 40 niveles por unidad
 ```
 
-**Tips:**
-- Use lowercase for all dictionary entries
-- Include common vocabulary appropriate for your learning level
-- The larger the dictionary, the more bonus words players can find
+Cada nivel generado incluye:
+
+- `--glossary` admite rutas locales o URLs HTTPS (por ejemplo, el enlace "Raw" de GitHub).
+- `solution_words`: 2 o 3 palabras que comparten la letra inicial y se cruzan en letras idénticas.
+- `letter_pool`: todas las letras necesarias, contando repeticiones (por ejemplo, `ANA` aporta dos `A`).
+- `grid_layout`: una palabra base horizontal y hasta dos verticales colocadas en columnas distintas de la base.
+
+Los archivos finales se escriben directamente en `levels.json` y `dictionary.json`, listos para que el juego los consuma.
 
 ## 🎨 Customization
 
