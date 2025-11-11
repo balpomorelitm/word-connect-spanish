@@ -129,18 +129,21 @@ function drawGrid() {
     // Mark cells that should contain letters
     gameState.levelData.grid_layout.forEach(wordData => {
         for (let i = 0; i < wordData.word.length; i++) {
-            const x = wordData.direction === 'horizontal' 
-                ? wordData.start_x + i 
+            const x = wordData.direction === 'horizontal'
+                ? wordData.start_x + i
                 : wordData.start_x;
-            const y = wordData.direction === 'vertical' 
-                ? wordData.start_y + i 
+            const y = wordData.direction === 'vertical'
+                ? wordData.start_y + i
                 : wordData.start_y;
-            
-            grid[y][x] = {
-                letter: wordData.word[i],
-                word: wordData.word,
-                isEmpty: false
-            };
+
+            if (!grid[y][x]) {
+                grid[y][x] = {
+                    letter: wordData.word[i],
+                    words: new Set([wordData.word])
+                };
+            } else {
+                grid[y][x].words.add(wordData.word);
+            }
         }
     });
     
@@ -154,11 +157,11 @@ function drawGrid() {
             
             if (grid[y][x]) {
                 cell.dataset.letter = grid[y][x].letter;
-                cell.dataset.word = grid[y][x].word;
+                cell.dataset.words = Array.from(grid[y][x].words).join('|');
             } else {
                 cell.classList.add('empty');
             }
-            
+
             gridContainer.appendChild(cell);
         }
     }
@@ -272,7 +275,8 @@ function foundPuzzleWord(word) {
 function fillGridWord(word) {
     const cells = document.querySelectorAll('.grid-cell');
     cells.forEach(cell => {
-        if (cell.dataset.word === word) {
+        const words = cell.dataset.words ? cell.dataset.words.split('|') : [];
+        if (words.includes(word)) {
             cell.textContent = cell.dataset.letter;
             cell.classList.add('filled');
         }
