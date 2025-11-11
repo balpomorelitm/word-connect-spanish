@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Word Connect - Español</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <header>
+            <h1>Word Connect</h1>
+            <div class="progress-bar">
+                <span id="unit-level">Unidad 1 - Nivel 1</span>
+                <span id="progress">0/3 palabras</span>
+            </div>
+        </header>
+
+        <div class="score-section">
+            <div class="score-item">
+                <span class="score-label">Puntos Bonus:</span>
+                <span id="score" class="score-value">0</span>
+            </div>
+            <button id="hint-button" class="hint-button">
+                💡 Pista (-50)
+            </button>
+        </div>
+
+        <div id="grid-container" class="grid-container">
+            <!-- Grid will be dynamically generated -->
+        </div>
+
+        <div id="current-word" class="current-word">
+            <span id="word-display"></span>
+        </div>
+
+        <div id="bonus-display" class="bonus-display hidden">
+            <!-- Bonus word feedback -->
+        </div>
+
+        <div id="letter-pool" class="letter-pool">
+            <!-- Letters will be dynamically generated -->
+        </div>
+
+        <div class="action-buttons">
+            <button id="clear-button" class="action-btn clear-btn">Borrar</button>
+            <button id="submit-button" class="action-btn submit-btn">Enviar</button>
+        </div>
+
+        <div id="level-complete-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2>¡Nivel Completado! 🎉</h2>
+                <p>Palabras encontradas: <span id="words-found"></span></p>
+                <p>Palabras bonus: <span id="bonus-found"></span></p>
+                <p>Puntos ganados: <span id="points-earned"></span></p>
+                <button id="next-level-button" class="next-btn">Siguiente Nivel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>

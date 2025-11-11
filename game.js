@@ -1,0 +1,385 @@
+// Game State
+let gameState = {
+    currentUnit: 1,
+    currentLevel: 0,
+    bonusPoints: 0,
+    foundWords: [],
+    foundBonusWords: [],
+    currentWord: '',
+    selectedLetters: [],
+    levelData: null,
+    allLevels: null,
+    dictionary: []
+};
+
+const HINT_COST = 50;
+
+// Initialize game on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadGameData();
+    loadProgress();
+    initGame();
+    setupEventListeners();
+});
+
+// Load levels and dictionary
+async function loadGameData() {
+    try {
+        const [levelsResponse, dictResponse] = await Promise.all([
+            fetch('levels.json'),
+            fetch('dictionary.json')
+        ]);
+        
+        gameState.allLevels = await levelsResponse.json();
+        gameState.dictionary = await dictResponse.json();
+        
+        console.log('Game data loaded successfully');
+    } catch (error) {
+        console.error('Error loading game data:', error);
+        alert('Error al cargar los datos del juego. Por favor, recarga la página.');
+    }
+}
+
+// Load progress from localStorage
+function loadProgress() {
+    const savedProgress = localStorage.getItem('wordConnectProgress');
+    if (savedProgress) {
+        const progress = JSON.parse(savedProgress);
+        gameState.currentUnit = progress.currentUnit || 1;
+        gameState.currentLevel = progress.currentLevel || 0;
+        gameState.bonusPoints = progress.bonusPoints || 0;
+    }
+    updateScore();
+}
+
+// Save progress to localStorage
+function saveProgress() {
+    localStorage.setItem('wordConnectProgress', JSON.stringify({
+        currentUnit: gameState.currentUnit,
+        currentLevel: gameState.currentLevel,
+        bonusPoints: gameState.bonusPoints
+    }));
+}
+
+// Initialize game for current level
+function initGame() {
+    const unitKey = `unit_${gameState.currentUnit}`;
+    const levels = gameState.allLevels[unitKey];
+    
+    if (!levels || !levels[gameState.currentLevel]) {
+        console.error('Level not found');
+        return;
+    }
+    
+    gameState.levelData = levels[gameState.currentLevel];
+    gameState.foundWords = [];
+    gameState.foundBonusWords = [];
+    gameState.currentWord = '';
+    gameState.selectedLetters = [];
+    
+    updateLevelDisplay();
+    drawGrid();
+    drawLetterPool();
+    clearCurrentWord();
+    hideBonusDisplay();
+}
+
+// Update level and progress display
+function updateLevelDisplay() {
+    document.getElementById('unit-level').textContent = 
+        `Unidad ${gameState.currentUnit} - Nivel ${gameState.currentLevel + 1}`;
+    updateProgress();
+}
+
+// Update progress counter
+function updateProgress() {
+    const total = gameState.levelData.solution_words.length;
+    const found = gameState.foundWords.length;
+    document.getElementById('progress').textContent = `${found}/${total} palabras`;
+}
+
+// Draw the crossword grid
+function drawGrid() {
+    const gridContainer = document.getElementById('grid-container');
+    gridContainer.innerHTML = '';
+    
+    // Calculate grid dimensions
+    let maxX = 0, maxY = 0;
+    gameState.levelData.grid_layout.forEach(wordData => {
+        const endX = wordData.direction === 'horizontal' 
+            ? wordData.start_x + wordData.word.length - 1 
+            : wordData.start_x;
+        const endY = wordData.direction === 'vertical' 
+            ? wordData.start_y + wordData.word.length - 1 
+            : wordData.start_y;
+        maxX = Math.max(maxX, endX);
+        maxY = Math.max(maxY, endY);
+    });
+    
+    const rows = maxY + 1;
+    const cols = maxX + 1;
+    
+    // Set grid template
+    gridContainer.style.gridTemplateColumns = `repeat(${cols}, 45px)`;
+    gridContainer.style.gridTemplateRows = `repeat(${rows}, 45px)`;
+    
+    // Create grid cells
+    const grid = Array(rows).fill().map(() => Array(cols).fill(null));
+    
+    // Mark cells that should contain letters
+    gameState.levelData.grid_layout.forEach(wordData => {
+        for (let i = 0; i < wordData.word.length; i++) {
+            const x = wordData.direction === 'horizontal' 
+                ? wordData.start_x + i 
+                : wordData.start_x;
+            const y = wordData.direction === 'vertical' 
+                ? wordData.start_y + i 
+                : wordData.start_y;
+            
+            grid[y][x] = {
+                letter: wordData.word[i],
+                word: wordData.word,
+                isEmpty: false
+            };
+        }
+    });
+    
+    // Create HTML cells
+    for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell';
+            cell.dataset.x = x;
+            cell.dataset.y = y;
+            
+            if (grid[y][x]) {
+                cell.dataset.letter = grid[y][x].letter;
+                cell.dataset.word = grid[y][x].word;
+            } else {
+                cell.classList.add('empty');
+            }
+            
+            gridContainer.appendChild(cell);
+        }
+    }
+}
+
+// Draw letter pool
+function drawLetterPool() {
+    const letterPool = document.getElementById('letter-pool');
+    letterPool.innerHTML = '';
+    
+    gameState.levelData.letter_pool.forEach((letter, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'letter-btn';
+        btn.textContent = letter;
+        btn.dataset.letter = letter;
+        btn.dataset.index = index;
+        letterPool.appendChild(btn);
+    });
+}
+
+// Setup event listeners
+function setupEventListeners() {
+    // Letter pool click events
+    document.getElementById('letter-pool').addEventListener('click', (e) => {
+        if (e.target.classList.contains('letter-btn')) {
+            selectLetter(e.target);
+        }
+    });
+    
+    // Action buttons
+    document.getElementById('clear-button').addEventListener('click', clearCurrentWord);
+    document.getElementById('submit-button').addEventListener('click', submitWord);
+    document.getElementById('hint-button').addEventListener('click', useHint);
+    document.getElementById('next-level-button').addEventListener('click', nextLevel);
+}
+
+// Select a letter
+function selectLetter(btn) {
+    if (btn.classList.contains('selected')) return;
+    
+    gameState.selectedLetters.push(btn);
+    gameState.currentWord += btn.dataset.letter;
+    btn.classList.add('selected');
+    updateCurrentWordDisplay();
+}
+
+// Clear current word
+function clearCurrentWord() {
+    gameState.selectedLetters.forEach(btn => {
+        btn.classList.remove('selected');
+    });
+    gameState.selectedLetters = [];
+    gameState.currentWord = '';
+    updateCurrentWordDisplay();
+    hideBonusDisplay();
+}
+
+// Update current word display
+function updateCurrentWordDisplay() {
+    document.getElementById('word-display').textContent = gameState.currentWord;
+}
+
+// Submit word for validation
+function submitWord() {
+    if (gameState.currentWord.length === 0) return;
+    
+    const word = gameState.currentWord.toUpperCase();
+    validateWord(word);
+}
+
+// Validate submitted word
+function validateWord(submittedWord) {
+    // Check if it's a puzzle word
+    if (gameState.levelData.solution_words.includes(submittedWord)) {
+        if (gameState.foundWords.includes(submittedWord)) {
+            showError('¡Ya encontraste esta palabra!');
+        } else {
+            foundPuzzleWord(submittedWord);
+        }
+        return;
+    }
+    
+    // Check if it's a bonus word
+    if (gameState.dictionary.includes(submittedWord.toLowerCase())) {
+        if (gameState.foundBonusWords.includes(submittedWord)) {
+            showError('¡Ya encontraste esta palabra bonus!');
+        } else {
+            foundBonusWord(submittedWord);
+        }
+        return;
+    }
+    
+    // Invalid word
+    showError('Palabra no válida');
+}
+
+// Handle found puzzle word
+function foundPuzzleWord(word) {
+    gameState.foundWords.push(word);
+    fillGridWord(word);
+    clearCurrentWord();
+    updateProgress();
+    
+    // Check if level is complete
+    if (gameState.foundWords.length === gameState.levelData.solution_words.length) {
+        setTimeout(() => showLevelComplete(), 500);
+    }
+}
+
+// Fill word in grid
+function fillGridWord(word) {
+    const cells = document.querySelectorAll('.grid-cell');
+    cells.forEach(cell => {
+        if (cell.dataset.word === word) {
+            cell.textContent = cell.dataset.letter;
+            cell.classList.add('filled');
+        }
+    });
+}
+
+// Handle found bonus word
+function foundBonusWord(word) {
+    gameState.foundBonusWords.push(word);
+    gameState.bonusPoints += 10;
+    updateScore();
+    saveProgress();
+    showBonusMessage(word);
+    clearCurrentWord();
+}
+
+// Show bonus message
+function showBonusMessage(word) {
+    const bonusDisplay = document.getElementById('bonus-display');
+    bonusDisplay.textContent = `¡Palabra extra: ${word}! +10 puntos`;
+    bonusDisplay.classList.remove('hidden');
+    
+    setTimeout(() => {
+        bonusDisplay.classList.add('hidden');
+    }, 2000);
+}
+
+// Hide bonus display
+function hideBonusDisplay() {
+    document.getElementById('bonus-display').classList.add('hidden');
+}
+
+// Show error message
+function showError(message) {
+    const wordDisplay = document.getElementById('current-word');
+    wordDisplay.classList.add('error-shake');
+    
+    const bonusDisplay = document.getElementById('bonus-display');
+    bonusDisplay.textContent = message;
+    bonusDisplay.style.background = '#f44336';
+    bonusDisplay.classList.remove('hidden');
+    
+    setTimeout(() => {
+        wordDisplay.classList.remove('error-shake');
+        bonusDisplay.classList.add('hidden');
+        bonusDisplay.style.background = '#ff9800';
+    }, 1000);
+}
+
+// Update score display
+function updateScore() {
+    document.getElementById('score').textContent = gameState.bonusPoints;
+    
+    const hintBtn = document.getElementById('hint-button');
+    hintBtn.disabled = gameState.bonusPoints < HINT_COST;
+}
+
+// Use hint
+function useHint() {
+    if (gameState.bonusPoints < HINT_COST) return;
+    
+    // Find an unfilled cell
+    const cells = Array.from(document.querySelectorAll('.grid-cell:not(.filled):not(.empty)'));
+    if (cells.length === 0) return;
+    
+    const randomCell = cells[Math.floor(Math.random() * cells.length)];
+    randomCell.textContent = randomCell.dataset.letter;
+    randomCell.classList.add('filled');
+    
+    gameState.bonusPoints -= HINT_COST;
+    updateScore();
+    saveProgress();
+}
+
+// Show level complete modal
+function showLevelComplete() {
+    const modal = document.getElementById('level-complete-modal');
+    document.getElementById('words-found').textContent = gameState.foundWords.length;
+    document.getElementById('bonus-found').textContent = gameState.foundBonusWords.length;
+    document.getElementById('points-earned').textContent = 
+        `${gameState.foundBonusWords.length * 10} puntos bonus`;
+    
+    modal.classList.remove('hidden');
+}
+
+// Next level
+function nextLevel() {
+    const modal = document.getElementById('level-complete-modal');
+    modal.classList.add('hidden');
+    
+    gameState.currentLevel++;
+    
+    // Check if unit is complete
+    const unitKey = `unit_${gameState.currentUnit}`;
+    if (gameState.currentLevel >= gameState.allLevels[unitKey].length) {
+        gameState.currentUnit++;
+        gameState.currentLevel = 0;
+        
+        // Check if game is complete
+        const nextUnitKey = `unit_${gameState.currentUnit}`;
+        if (!gameState.allLevels[nextUnitKey]) {
+            alert('¡Felicidades! ¡Has completado todos los niveles!');
+            gameState.currentUnit = 1;
+            gameState.currentLevel = 0;
+        }
+    }
+    
+    saveProgress();
+    initGame();
+}
