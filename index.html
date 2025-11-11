@@ -9,7 +9,12 @@
 <body>
     <div class="game-container">
         <header>
-            <h1>Word Connect</h1>
+            <div class="header-top">
+                <h1>Word Connect</h1>
+                <button id="new-game-button" class="new-game-btn" title="Iniciar nueva partida">
+                    🔄 Nueva Partida
+                </button>
+            </div>
             <div class="progress-bar">
                 <span id="unit-level">Unidad 1 - Nivel 1</span>
                 <span id="progress">0/3 palabras</span>
@@ -21,9 +26,19 @@
                 <span class="score-label">Puntos Bonus:</span>
                 <span id="score" class="score-value">0</span>
             </div>
-            <button id="hint-button" class="hint-button">
-                💡 Pista (-50)
+            <button id="hint-button" class="hint-button" disabled title="Canjea 10 palabras bonus por una pista">
+                💡 Pista (10 palabras)
             </button>
+        </div>
+
+        <!-- Barra de progreso de palabras bonus -->
+        <div class="bonus-progress-container">
+            <div class="bonus-progress-label">
+                <span>🌟 Palabras Extra: <span id="bonus-count">0</span>/10</span>
+            </div>
+            <div class="bonus-progress-bar">
+                <div id="bonus-progress-fill" class="bonus-progress-fill"></div>
+            </div>
         </div>
 
         <div id="grid-container" class="grid-container">
@@ -54,6 +69,19 @@
                 <p>Palabras bonus: <span id="bonus-found"></span></p>
                 <p>Puntos ganados: <span id="points-earned"></span></p>
                 <button id="next-level-button" class="next-btn">Siguiente Nivel</button>
+            </div>
+        </div>
+
+        <!-- Modal de confirmación para nueva partida -->
+        <div id="new-game-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2>⚠️ Iniciar Nueva Partida</h2>
+                <p>¿Estás seguro de que quieres reiniciar el juego?</p>
+                <p style="color: #f44336; font-size: 0.9em;">Se perderá todo el progreso actual.</p>
+                <div class="modal-buttons">
+                    <button id="confirm-new-game" class="confirm-btn">Sí, reiniciar</button>
+                    <button id="cancel-new-game" class="cancel-btn">Cancelar</button>
+                </div>
             </div>
         </div>
     </div>
