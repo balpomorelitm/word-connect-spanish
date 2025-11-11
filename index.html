@@ -76,10 +76,19 @@
         <div id="new-game-modal" class="modal hidden">
             <div class="modal-content">
                 <h2>⚠️ Iniciar Nueva Partida</h2>
-                <p>¿Estás seguro de que quieres reiniciar el juego?</p>
+                <p>Selecciona las unidades con las que quieres jugar antes de reiniciar.</p>
                 <p style="color: #f44336; font-size: 0.9em;">Se perderá todo el progreso actual.</p>
+
+                <div class="unit-selection-wrapper">
+                    <h3>Elige unidades</h3>
+                    <p class="unit-selection-hint">Puedes activar varias unidades; las palabras de otras unidades quedarán bloqueadas.</p>
+                    <div id="unit-selection" class="unit-selection-grid">
+                        <!-- Unit options rendered dynamically -->
+                    </div>
+                </div>
+
                 <div class="modal-buttons">
-                    <button id="confirm-new-game" class="confirm-btn">Sí, reiniciar</button>
+                    <button id="confirm-new-game" class="confirm-btn">Guardar selección</button>
                     <button id="cancel-new-game" class="cancel-btn">Cancelar</button>
                 </div>
             </div>

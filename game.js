@@ -1,6 +1,6 @@
 // Game State
 let gameState = {
-    currentUnit: 1,
+    currentUnit: 0,
     currentLevel: 0,
     bonusPoints: 0,
     bonusWordCount: 0, // Contador de palabras bonus para pistas
@@ -10,16 +10,274 @@ let gameState = {
     selectedLetters: [],
     levelData: null,
     allLevels: null,
-    dictionary: []
+    dictionary: [],
+    fullDictionary: [],
+    dictionarySet: new Set(),
+    selectedUnits: [],
+    availableUnits: [],
+    wordUnitMap: new Map(),
+    unitTitles: {},
+    unitDisplayInfo: []
 };
 
 const HINT_WORDS_REQUIRED = 10; // Palabras bonus necesarias para una pista
 const BONUS_POINTS_PER_WORD = 10;
 
+const UNIT_AULA_MAPPING = {
+    0: { aula: 1, unidad: 0 },
+    1: { aula: 1, unidad: 1 },
+    2: { aula: 1, unidad: 2 },
+    3: { aula: 1, unidad: 3 },
+    4: { aula: 1, unidad: 4 },
+    5: { aula: 1, unidad: 5 },
+    6: { aula: 1, unidad: 6 },
+    7: { aula: 2, unidad: 1 },
+    8: { aula: 2, unidad: 2 },
+    9: { aula: 2, unidad: 4 }
+};
+
+function extractUnitNumber(rawUnit) {
+    if (rawUnit === undefined || rawUnit === null) {
+        return null;
+    }
+
+    const text = String(rawUnit).trim();
+    if (!text) {
+        return null;
+    }
+
+    const explicitUnit = text.match(/U(\d+)/i);
+    if (explicitUnit) {
+        return parseInt(explicitUnit[1], 10);
+    }
+
+    const digits = text.match(/\d+/);
+    if (digits) {
+        return parseInt(digits[0], 10);
+    }
+
+    return null;
+}
+
+function extractUnitTitle(rawUnit) {
+    if (typeof rawUnit !== 'string') {
+        return '';
+    }
+
+    const dotIndex = rawUnit.indexOf('. ');
+    if (dotIndex !== -1) {
+        return rawUnit.slice(dotIndex + 2).trim();
+    }
+
+    const hashIndex = rawUnit.indexOf('#');
+    if (hashIndex !== -1) {
+        return rawUnit.slice(hashIndex + 1).trim();
+    }
+
+    return rawUnit.trim();
+}
+
+function normalizeGlossaryWord(rawWord) {
+    if (!rawWord || typeof rawWord !== 'string') {
+        return null;
+    }
+
+    let word = rawWord.trim();
+    if (!word) {
+        return null;
+    }
+
+    word = word.replace(/^(el|la|los|las)\s+/i, '');
+    word = word.split('/')[0].trim();
+    if (!word || /\s/.test(word)) {
+        return null;
+    }
+
+    word = word.replace(/["'().,;:!?¡¿-]/g, '');
+    if (!word) {
+        return null;
+    }
+
+    word = word.toLocaleLowerCase('es-ES');
+    word = word
+        .replace(/[áäâà]/g, 'a')
+        .replace(/[éëêè]/g, 'e')
+        .replace(/[íïîì]/g, 'i')
+        .replace(/[óöôò]/g, 'o')
+        .replace(/[úüûù]/g, 'u');
+
+    word = word.toLocaleUpperCase('es-ES');
+
+    if (!/^[A-ZÑ]+$/.test(word)) {
+        return null;
+    }
+
+    return word.toLocaleLowerCase('es-ES');
+}
+
+function processGlossaryData(entries) {
+    const unitTitles = {};
+    const wordUnitMap = new Map();
+
+    if (!Array.isArray(entries)) {
+        return { unitTitles, wordUnitMap };
+    }
+
+    entries.forEach((item) => {
+        const unitValue = item?.['Lugar en el libro'];
+        const unitNumber = extractUnitNumber(unitValue);
+        if (unitNumber === null || Number.isNaN(unitNumber)) {
+            return;
+        }
+
+        if (unitTitles[unitNumber] === undefined && unitValue) {
+            unitTitles[unitNumber] = extractUnitTitle(unitValue);
+        }
+
+        const lemma = item?.['Unidad Léxica (Español)'];
+        const normalized = normalizeGlossaryWord(lemma);
+        if (!normalized) {
+            return;
+        }
+
+        if (!wordUnitMap.has(normalized)) {
+            wordUnitMap.set(normalized, new Set());
+        }
+        wordUnitMap.get(normalized).add(unitNumber);
+    });
+
+    return { unitTitles, wordUnitMap };
+}
+
+function getUnitMeta(unitNumber) {
+    const mapping = UNIT_AULA_MAPPING[unitNumber];
+    if (mapping) {
+        return { ...mapping, title: gameState.unitTitles[unitNumber] || '' };
+    }
+
+    const aula = unitNumber <= 6 ? 1 : 2;
+    return { aula, unidad: unitNumber, title: gameState.unitTitles[unitNumber] || '' };
+}
+
+function buildUnitDisplayInfo() {
+    return gameState.availableUnits.map((unitNumber) => {
+        const meta = getUnitMeta(unitNumber);
+        return {
+            unit: unitNumber,
+            aula: meta.aula,
+            unidad: meta.unidad,
+            title: meta.title,
+            aulaLabel: `Aula ${meta.aula}`,
+            unidadLabel: `Unidad ${meta.unidad}`
+        };
+    });
+}
+
+function orderUnits(units) {
+    const normalizedUnits = Array.isArray(units)
+        ? units.map((unit) => Number(unit)).filter((unit) => !Number.isNaN(unit))
+        : [];
+    const unitSet = new Set(normalizedUnits);
+    return gameState.availableUnits.filter((unit) => unitSet.has(unit));
+}
+
+function applyUnitFilters() {
+    if (!Array.isArray(gameState.selectedUnits) || gameState.selectedUnits.length === 0) {
+        gameState.selectedUnits = [...gameState.availableUnits];
+    }
+
+    if (!Array.isArray(gameState.fullDictionary) || gameState.fullDictionary.length === 0) {
+        gameState.dictionary = [];
+        gameState.dictionarySet = new Set();
+        return;
+    }
+
+    if (!(gameState.wordUnitMap instanceof Map) || gameState.wordUnitMap.size === 0) {
+        gameState.dictionary = [...gameState.fullDictionary];
+        gameState.dictionarySet = new Set(gameState.dictionary);
+        return;
+    }
+
+    const allowedUnits = new Set(gameState.selectedUnits);
+    const filteredDictionary = gameState.fullDictionary.filter((word) => {
+        const unitSet = gameState.wordUnitMap.get(word);
+        if (!unitSet) {
+            return false;
+        }
+
+        for (const unit of unitSet) {
+            if (allowedUnits.has(unit)) {
+                return true;
+            }
+        }
+        return false;
+    });
+
+    gameState.dictionary = filteredDictionary;
+    gameState.dictionarySet = new Set(filteredDictionary);
+}
+
+function initializeUnitSelectionUI() {
+    const container = document.getElementById('unit-selection');
+    if (!container) {
+        return;
+    }
+
+    container.innerHTML = '';
+
+    gameState.unitDisplayInfo.forEach((info) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'unit-card';
+        button.dataset.unit = String(info.unit);
+        button.setAttribute('aria-pressed', 'false');
+
+        const aulaSpan = document.createElement('span');
+        aulaSpan.className = 'unit-card-aula';
+        aulaSpan.textContent = info.aulaLabel;
+
+        const unidadSpan = document.createElement('span');
+        unidadSpan.className = 'unit-card-unidad';
+        unidadSpan.textContent = info.unidadLabel;
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'unit-card-title';
+        titleSpan.textContent = info.title || '\u00A0';
+
+        button.append(aulaSpan, unidadSpan, titleSpan);
+
+        button.addEventListener('click', () => {
+            const isSelected = button.classList.toggle('selected');
+            button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        });
+
+        container.appendChild(button);
+    });
+
+    syncUnitSelectionUI();
+}
+
+function syncUnitSelectionUI() {
+    const container = document.getElementById('unit-selection');
+    if (!container) {
+        return;
+    }
+
+    const selectedSet = new Set(gameState.selectedUnits);
+    const buttons = container.querySelectorAll('.unit-card');
+    buttons.forEach((button) => {
+        const unit = parseInt(button.dataset.unit, 10);
+        const isSelected = selectedSet.has(unit);
+        button.classList.toggle('selected', isSelected);
+        button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+    });
+}
+
 // Initialize game on page load
 document.addEventListener('DOMContentLoaded', async () => {
     await loadGameData();
     loadProgress();
+    initializeUnitSelectionUI();
     initGame();
     setupEventListeners();
 });
@@ -27,14 +285,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Load levels and dictionary
 async function loadGameData() {
     try {
-        const [levelsResponse, dictResponse] = await Promise.all([
+        const [levelsResponse, dictResponse, glossaryResponse] = await Promise.all([
             fetch('levels.json'),
-            fetch('dictionary.json')
+            fetch('dictionary.json'),
+            fetch('span10011002.json')
         ]);
-        
+
         gameState.allLevels = await levelsResponse.json();
-        gameState.dictionary = await dictResponse.json();
-        
+        gameState.fullDictionary = await dictResponse.json();
+        gameState.dictionary = [...gameState.fullDictionary];
+        gameState.dictionarySet = new Set(gameState.dictionary);
+
+        gameState.availableUnits = Object.keys(gameState.allLevels)
+            .map((key) => parseInt(key.replace('unit_', ''), 10))
+            .filter((value) => !Number.isNaN(value))
+            .sort((a, b) => a - b);
+
+        const glossaryData = await glossaryResponse.json();
+        const { unitTitles, wordUnitMap } = processGlossaryData(glossaryData);
+        gameState.unitTitles = unitTitles;
+        gameState.wordUnitMap = wordUnitMap;
+        gameState.unitDisplayInfo = buildUnitDisplayInfo();
+
         console.log('Game data loaded successfully');
     } catch (error) {
         console.error('Error loading game data:', error);
@@ -47,7 +319,7 @@ async function isValidSpanishWord(word) {
     const wordLower = word.toLowerCase();
     
     // Primero verificar el diccionario local
-    if (gameState.dictionary.includes(wordLower)) {
+    if (gameState.dictionarySet.has(wordLower)) {
         return true;
     }
     
@@ -85,14 +357,66 @@ async function isValidSpanishWord(word) {
 
 // Load progress from localStorage
 function loadProgress() {
-    const savedProgress = localStorage.getItem('wordConnectProgress');
-    if (savedProgress) {
-        const progress = JSON.parse(savedProgress);
-        gameState.currentUnit = progress.currentUnit || 1;
-        gameState.currentLevel = progress.currentLevel || 0;
-        gameState.bonusPoints = progress.bonusPoints || 0;
-        gameState.bonusWordCount = progress.bonusWordCount || 0;
+    const availableUnits = gameState.availableUnits;
+    if (!availableUnits.length) {
+        console.error('No hay unidades disponibles para cargar.');
+        return;
     }
+
+    const savedProgress = localStorage.getItem('wordConnectProgress');
+
+    let selectedUnits = [...availableUnits];
+    let currentUnit = availableUnits[0];
+    let currentLevel = 0;
+    let bonusPoints = 0;
+    let bonusWordCount = 0;
+
+    if (savedProgress) {
+        try {
+            const progress = JSON.parse(savedProgress);
+            bonusPoints = Number(progress.bonusPoints) || 0;
+            bonusWordCount = Number(progress.bonusWordCount) || 0;
+
+            if (Array.isArray(progress.selectedUnits) && progress.selectedUnits.length > 0) {
+                selectedUnits = progress.selectedUnits;
+            }
+
+            const parsedCurrentUnit = Number(progress.currentUnit);
+            if (!Number.isNaN(parsedCurrentUnit) && availableUnits.includes(parsedCurrentUnit)) {
+                currentUnit = parsedCurrentUnit;
+            }
+
+            const parsedCurrentLevel = Number(progress.currentLevel);
+            if (!Number.isNaN(parsedCurrentLevel)) {
+                currentLevel = parsedCurrentLevel;
+            }
+        } catch (error) {
+            console.warn('No se pudo analizar el progreso guardado:', error);
+        }
+    }
+
+    gameState.selectedUnits = orderUnits(selectedUnits);
+    if (!gameState.selectedUnits.length) {
+        gameState.selectedUnits = [...availableUnits];
+    }
+
+    applyUnitFilters();
+
+    if (!gameState.selectedUnits.includes(currentUnit)) {
+        currentUnit = gameState.selectedUnits[0];
+        currentLevel = 0;
+    }
+
+    const levels = gameState.allLevels[`unit_${currentUnit}`] || [];
+    if (currentLevel < 0 || currentLevel >= levels.length) {
+        currentLevel = 0;
+    }
+
+    gameState.currentUnit = currentUnit;
+    gameState.currentLevel = currentLevel;
+    gameState.bonusPoints = bonusPoints;
+    gameState.bonusWordCount = bonusWordCount;
+
     updateScore();
     updateBonusProgress();
 }
@@ -103,36 +427,72 @@ function saveProgress() {
         currentUnit: gameState.currentUnit,
         currentLevel: gameState.currentLevel,
         bonusPoints: gameState.bonusPoints,
-        bonusWordCount: gameState.bonusWordCount
+        bonusWordCount: gameState.bonusWordCount,
+        selectedUnits: gameState.selectedUnits
     }));
 }
 
 // Reset game to beginning
-function resetGame() {
-    gameState.currentUnit = 1;
+function resetGame(newSelectedUnits = null) {
+    if (Array.isArray(newSelectedUnits) && newSelectedUnits.length > 0) {
+        const orderedUnits = orderUnits(newSelectedUnits);
+        if (orderedUnits.length > 0) {
+            gameState.selectedUnits = orderedUnits;
+        }
+    }
+
+    if (!gameState.selectedUnits.length) {
+        gameState.selectedUnits = [...gameState.availableUnits];
+    }
+
+    applyUnitFilters();
+
+    gameState.currentUnit = gameState.selectedUnits[0];
     gameState.currentLevel = 0;
     gameState.bonusPoints = 0;
     gameState.bonusWordCount = 0;
-    saveProgress();
+    gameState.foundWords = [];
+    gameState.foundBonusWords = [];
+    gameState.currentWord = '';
+    gameState.selectedLetters = [];
+
+    updateScore();
+    updateBonusProgress();
     initGame();
+    saveProgress();
+    syncUnitSelectionUI();
 }
 
 // Initialize game for current level
 function initGame() {
+    if (!gameState.selectedUnits.length) {
+        gameState.selectedUnits = [...gameState.availableUnits];
+        applyUnitFilters();
+    }
+
+    if (!gameState.selectedUnits.includes(gameState.currentUnit)) {
+        gameState.currentUnit = gameState.selectedUnits[0];
+        gameState.currentLevel = 0;
+    }
+
     const unitKey = `unit_${gameState.currentUnit}`;
     const levels = gameState.allLevels[unitKey];
-    
-    if (!levels || !levels[gameState.currentLevel]) {
-        console.error('Level not found');
+
+    if (!levels || !levels.length) {
+        console.error('No se encontraron niveles para la unidad seleccionada.');
         return;
     }
-    
+
+    if (gameState.currentLevel < 0 || gameState.currentLevel >= levels.length) {
+        gameState.currentLevel = 0;
+    }
+
     gameState.levelData = levels[gameState.currentLevel];
     gameState.foundWords = [];
     gameState.foundBonusWords = [];
     gameState.currentWord = '';
     gameState.selectedLetters = [];
-    
+
     updateLevelDisplay();
     drawGrid();
     drawLetterPool();
@@ -143,8 +503,11 @@ function initGame() {
 
 // Update level and progress display
 function updateLevelDisplay() {
-    document.getElementById('unit-level').textContent = 
-        `Unidad ${gameState.currentUnit} - Nivel ${gameState.currentLevel + 1}`;
+    const meta = getUnitMeta(gameState.currentUnit);
+    const aulaLabel = `Aula ${meta.aula}`;
+    const unidadLabel = `Unidad ${meta.unidad}`;
+    document.getElementById('unit-level').textContent =
+        `${aulaLabel} · ${unidadLabel} - Nivel ${gameState.currentLevel + 1}`;
     updateProgress();
 }
 
@@ -283,6 +646,7 @@ function setupEventListeners() {
 
 // Show new game confirmation modal
 function showNewGameModal() {
+    syncUnitSelectionUI();
     document.getElementById('new-game-modal').classList.remove('hidden');
 }
 
@@ -293,8 +657,22 @@ function hideNewGameModal() {
 
 // Confirm new game
 function confirmNewGame() {
+    const container = document.getElementById('unit-selection');
+    const selectedButtons = container
+        ? Array.from(container.querySelectorAll('.unit-card.selected'))
+        : [];
+
+    const selectedUnits = selectedButtons
+        .map((button) => parseInt(button.dataset.unit, 10))
+        .filter((unit) => !Number.isNaN(unit));
+
+    if (selectedUnits.length === 0) {
+        alert('Selecciona al menos una unidad para iniciar una nueva partida.');
+        return;
+    }
+
     hideNewGameModal();
-    resetGame();
+    resetGame(selectedUnits);
 }
 
 // Select a letter
@@ -504,24 +882,26 @@ function showLevelComplete() {
 function nextLevel() {
     const modal = document.getElementById('level-complete-modal');
     modal.classList.add('hidden');
-    
+
     gameState.currentLevel++;
-    
-    // Check if unit is complete
-    const unitKey = `unit_${gameState.currentUnit}`;
-    if (gameState.currentLevel >= gameState.allLevels[unitKey].length) {
-        gameState.currentUnit++;
-        gameState.currentLevel = 0;
-        
-        // Check if game is complete
-        const nextUnitKey = `unit_${gameState.currentUnit}`;
-        if (!gameState.allLevels[nextUnitKey]) {
-            alert('¡Felicidades! ¡Has completado todos los niveles!');
-            gameState.currentUnit = 1;
-            gameState.currentLevel = 0;
+
+    const currentUnitKey = `unit_${gameState.currentUnit}`;
+    const levels = gameState.allLevels[currentUnitKey] || [];
+
+    if (gameState.currentLevel >= levels.length) {
+        const currentIndex = gameState.selectedUnits.indexOf(gameState.currentUnit);
+        const isLastUnit = currentIndex === gameState.selectedUnits.length - 1;
+
+        if (isLastUnit) {
+            alert('¡Felicidades! ¡Has completado todas las unidades seleccionadas!');
+            gameState.currentUnit = gameState.selectedUnits[0];
+        } else {
+            gameState.currentUnit = gameState.selectedUnits[currentIndex + 1];
         }
+
+        gameState.currentLevel = 0;
     }
-    
-    saveProgress();
+
     initGame();
+    saveProgress();
 }
