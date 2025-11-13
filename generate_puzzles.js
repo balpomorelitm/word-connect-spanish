@@ -443,8 +443,14 @@ function createCrossword(words) {
             continue;
           }
 
-          const startX = newDirection === 'horizontal' ? anchorX - candidateIndex : anchorX;
-          const startY = newDirection === 'vertical' ? anchorY - candidateIndex : anchorY;
+          let startX = anchorX;
+          let startY = anchorY;
+
+          if (newDirection === 'horizontal') {
+            startX = anchorX - candidateIndex;
+          } else {
+            startY = anchorY - candidateIndex;
+          }
 
           if (!canPlaceWord(candidate, startX, startY, newDirection, grid)) {
             continue;
