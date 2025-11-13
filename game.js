@@ -23,6 +23,38 @@ let gameState = {
 const HINT_WORDS_REQUIRED = 10; // Palabras bonus necesarias para una pista
 const BONUS_POINTS_PER_WORD = 10;
 
+const AULA_UNIT_TO_UNIT_NUMBER = {
+    '1-0': 0,
+    '1-1': 1,
+    '1-2': 2,
+    '1-3': 3,
+    '1-4': 4,
+    '1-5': 5,
+    '1-6': 6,
+    '1-7': 7,
+    '1-8': 8,
+    '1-9': 9,
+    '2-1': 10,
+    '2-2': 11,
+    '2-4': 12
+};
+
+const UNIT_TITLE_OVERRIDES = {
+    0: 'En el aula',
+    1: 'Nosotros y nosotras',
+    2: 'Quiero aprender español',
+    3: 'Dónde está Santiago',
+    4: 'Cuál prefieres',
+    5: 'Tus amigos son mis amigos',
+    6: 'Día a día',
+    7: 'A comer',
+    8: 'El barrio ideal',
+    9: '¿Sabes conducir?',
+    10: 'El español y tú',
+    11: 'Una vida de película',
+    12: 'Hogar dulce hogar'
+};
+
 const UNIT_AULA_MAPPING = {
     0: { aula: 1, unidad: 0 },
     1: { aula: 1, unidad: 1 },
@@ -31,9 +63,12 @@ const UNIT_AULA_MAPPING = {
     4: { aula: 1, unidad: 4 },
     5: { aula: 1, unidad: 5 },
     6: { aula: 1, unidad: 6 },
-    7: { aula: 2, unidad: 1 },
-    8: { aula: 2, unidad: 2 },
-    9: { aula: 2, unidad: 4 }
+    7: { aula: 1, unidad: 7 },
+    8: { aula: 1, unidad: 8 },
+    9: { aula: 1, unidad: 9 },
+    10: { aula: 2, unidad: 1 },
+    11: { aula: 2, unidad: 2 },
+    12: { aula: 2, unidad: 4 }
 };
 
 function extractUnitNumber(rawUnit) {
@@ -46,9 +81,23 @@ function extractUnitNumber(rawUnit) {
         return null;
     }
 
-    const explicitUnit = text.match(/U(\d+)/i);
-    if (explicitUnit) {
-        return parseInt(explicitUnit[1], 10);
+    const aulaMatch = text.match(/Aula\s*(\d+)/i);
+    const unidadMatch = text.match(/U\s*(\d+)/i) || text.match(/U(\d+)/i);
+
+    if (unidadMatch) {
+        const unidadValue = parseInt(unidadMatch[1], 10);
+        if (!Number.isNaN(unidadValue)) {
+            const aulaValue = aulaMatch ? parseInt(aulaMatch[1], 10) : 1;
+            const combinedKey = `${aulaValue}-${unidadValue}`;
+
+            if (Object.prototype.hasOwnProperty.call(AULA_UNIT_TO_UNIT_NUMBER, combinedKey)) {
+                return AULA_UNIT_TO_UNIT_NUMBER[combinedKey];
+            }
+
+            if (aulaValue === 1) {
+                return unidadValue;
+            }
+        }
     }
 
     const digits = text.match(/\d+/);
@@ -146,6 +195,10 @@ function processGlossaryData(entries) {
         wordUnitMap.get(normalized).add(unitNumber);
     });
 
+    Object.entries(UNIT_TITLE_OVERRIDES).forEach(([unitKey, title]) => {
+        unitTitles[unitKey] = title;
+    });
+
     return { unitTitles, wordUnitMap };
 }
 
@@ -155,8 +208,9 @@ function getUnitMeta(unitNumber) {
         return { ...mapping, title: gameState.unitTitles[unitNumber] || '' };
     }
 
-    const aula = unitNumber <= 6 ? 1 : 2;
-    return { aula, unidad: unitNumber, title: gameState.unitTitles[unitNumber] || '' };
+    const aula = unitNumber <= 9 ? 1 : 2;
+    const unidad = aula === 1 ? unitNumber : unitNumber - 9;
+    return { aula, unidad, title: gameState.unitTitles[unitNumber] || '' };
 }
 
 function buildUnitDisplayInfo() {
