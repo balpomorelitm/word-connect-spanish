@@ -177,46 +177,6 @@ function shuffleArray(array) {
   return array;
 }
 
-function prioritizeIndices(length) {
-  const interior = [];
-  const edges = [];
-
-  for (let index = 0; index < length; index += 1) {
-    if (index === 0 || index === length - 1) {
-      edges.push(index);
-    } else {
-      interior.push(index);
-    }
-  }
-
-  shuffleArray(interior);
-  shuffleArray(edges);
-
-  return interior.concat(edges);
-}
-
-function prioritizedMatches(word, letter) {
-  const interior = [];
-  const edges = [];
-
-  for (let index = 0; index < word.length; index += 1) {
-    if (word[index] !== letter) {
-      continue;
-    }
-
-    if (index === 0 || index === word.length - 1) {
-      edges.push(index);
-    } else {
-      interior.push(index);
-    }
-  }
-
-  shuffleArray(interior);
-  shuffleArray(edges);
-
-  return interior.concat(edges);
-}
-
 function coordinateKey(x, y) {
   return `${x},${y}`;
 }
@@ -453,17 +413,16 @@ function createCrossword(words) {
   while (remaining.size > 0 && failures < maxFailures) {
     const basePlacement = placements[Math.floor(Math.random() * placements.length)];
     const baseWord = basePlacement.word;
-    const letterIndices = prioritizeIndices(baseWord.length);
+    const baseIndices = Array.from({ length: baseWord.length }, (_, index) => index);
+    shuffleArray(baseIndices);
 
-    let placed = false;
+    const potentialPlacements = [];
 
-    for (const baseIndex of letterIndices) {
+    for (const baseIndex of baseIndices) {
       const letter = baseWord[baseIndex];
-      const candidates = shuffleArray(
-        Array.from(remaining).filter((word) => word.includes(letter)),
-      );
+      const matchingWords = Array.from(remaining).filter((word) => word.includes(letter));
 
-      if (!candidates.length) {
+      if (!matchingWords.length) {
         continue;
       }
 
@@ -478,10 +437,12 @@ function createCrossword(words) {
 
       const newDirection = basePlacement.direction === 'horizontal' ? 'vertical' : 'horizontal';
 
-      for (const candidate of candidates) {
-        const candidateIndices = prioritizedMatches(candidate, letter);
+      for (const candidate of matchingWords) {
+        for (let candidateIndex = 0; candidateIndex < candidate.length; candidateIndex += 1) {
+          if (candidate[candidateIndex] !== letter) {
+            continue;
+          }
 
-        for (const candidateIndex of candidateIndices) {
           const startX = newDirection === 'horizontal' ? anchorX - candidateIndex : anchorX;
           const startY = newDirection === 'vertical' ? anchorY - candidateIndex : anchorY;
 
@@ -489,27 +450,27 @@ function createCrossword(words) {
             continue;
           }
 
-          placeWordOnGrid(candidate, startX, startY, newDirection, grid, placements);
-          remaining.delete(candidate);
-          placed = true;
-          break;
+          potentialPlacements.push({
+            word: candidate,
+            start_x: startX,
+            start_y: startY,
+            direction: newDirection,
+          });
         }
-
-        if (placed) {
-          break;
-        }
-      }
-
-      if (placed) {
-        break;
       }
     }
 
-    if (!placed) {
+    if (potentialPlacements.length === 0) {
       failures += 1;
-    } else {
-      failures = 0;
+      continue;
     }
+
+    const choice =
+      potentialPlacements[Math.floor(Math.random() * potentialPlacements.length)];
+
+    placeWordOnGrid(choice.word, choice.start_x, choice.start_y, choice.direction, grid, placements);
+    remaining.delete(choice.word);
+    failures = 0;
   }
 
   if (remaining.size > 0) {
