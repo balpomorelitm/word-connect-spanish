@@ -395,38 +395,92 @@ function createCrossword(words) {
     return null;
   }
 
-  const attempts = [];
-  const byLength = uniqueWords.slice().sort((a, b) => b.length - a.length);
-  const maxBases = Math.min(byLength.length, 3);
-  for (let i = 0; i < maxBases; i += 1) {
-    const baseWord = byLength[i];
-    const others = uniqueWords.filter((word) => word !== baseWord);
-    attempts.push([baseWord, ...shuffleArray(others.slice())]);
+  const shuffledWords = shuffleArray(uniqueWords.slice());
+  const firstWord = shuffledWords.shift();
+  if (!firstWord) {
+    return null;
   }
 
-  if (uniqueWords.length <= 6) {
-    for (const permutation of generateAllPermutations(uniqueWords)) {
-      attempts.push(permutation);
-    }
-  }
+  const grid = new Map();
+  const placements = [];
+  const initialOrientation = Math.random() < 0.5 ? 'horizontal' : 'vertical';
+  placeWordOnGrid(firstWord, 0, 0, initialOrientation, grid, placements);
 
-  const seen = new Set();
-  for (const order of attempts) {
-    const key = order.join('|');
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
+  const remaining = new Set(shuffledWords);
+  const maxFailures = uniqueWords.length * 20;
+  let failures = 0;
 
-    for (const orientation of ['horizontal', 'vertical']) {
-      const placements = buildCrosswordFromOrder(order, orientation);
-      if (placements) {
-        return placements;
+  while (remaining.size > 0 && failures < maxFailures) {
+    const basePlacement = placements[Math.floor(Math.random() * placements.length)];
+    const baseWord = basePlacement.word;
+    const letterIndices = shuffleArray(Array.from({ length: baseWord.length }, (_, index) => index));
+
+    let placed = false;
+
+    for (const baseIndex of letterIndices) {
+      const letter = baseWord[baseIndex];
+      const candidates = shuffleArray(
+        Array.from(remaining).filter((word) => word.includes(letter)),
+      );
+
+      if (!candidates.length) {
+        continue;
+      }
+
+      const anchorX =
+        basePlacement.direction === 'horizontal'
+          ? basePlacement.start_x + baseIndex
+          : basePlacement.start_x;
+      const anchorY =
+        basePlacement.direction === 'vertical'
+          ? basePlacement.start_y + baseIndex
+          : basePlacement.start_y;
+
+      const newDirection = basePlacement.direction === 'horizontal' ? 'vertical' : 'horizontal';
+
+      for (const candidate of candidates) {
+        const candidateIndices = shuffleArray(
+          Array.from({ length: candidate.length }, (_, index) => index).filter(
+            (index) => candidate[index] === letter,
+          ),
+        );
+
+        for (const candidateIndex of candidateIndices) {
+          const startX = newDirection === 'horizontal' ? anchorX - candidateIndex : anchorX;
+          const startY = newDirection === 'vertical' ? anchorY - candidateIndex : anchorY;
+
+          if (!canPlaceWord(candidate, startX, startY, newDirection, grid)) {
+            continue;
+          }
+
+          placeWordOnGrid(candidate, startX, startY, newDirection, grid, placements);
+          remaining.delete(candidate);
+          placed = true;
+          break;
+        }
+
+        if (placed) {
+          break;
+        }
+      }
+
+      if (placed) {
+        break;
       }
     }
+
+    if (!placed) {
+      failures += 1;
+    } else {
+      failures = 0;
+    }
   }
 
-  return null;
+  if (remaining.size > 0) {
+    return null;
+  }
+
+  return normalizePlacements(placements);
 }
 
 function chooseWordCount(currentCount, levelsPerUnit, availableCount) {
