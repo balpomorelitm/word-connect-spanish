@@ -177,6 +177,46 @@ function shuffleArray(array) {
   return array;
 }
 
+function prioritizeIndices(length) {
+  const interior = [];
+  const edges = [];
+
+  for (let index = 0; index < length; index += 1) {
+    if (index === 0 || index === length - 1) {
+      edges.push(index);
+    } else {
+      interior.push(index);
+    }
+  }
+
+  shuffleArray(interior);
+  shuffleArray(edges);
+
+  return interior.concat(edges);
+}
+
+function prioritizedMatches(word, letter) {
+  const interior = [];
+  const edges = [];
+
+  for (let index = 0; index < word.length; index += 1) {
+    if (word[index] !== letter) {
+      continue;
+    }
+
+    if (index === 0 || index === word.length - 1) {
+      edges.push(index);
+    } else {
+      interior.push(index);
+    }
+  }
+
+  shuffleArray(interior);
+  shuffleArray(edges);
+
+  return interior.concat(edges);
+}
+
 function coordinateKey(x, y) {
   return `${x},${y}`;
 }
@@ -413,7 +453,7 @@ function createCrossword(words) {
   while (remaining.size > 0 && failures < maxFailures) {
     const basePlacement = placements[Math.floor(Math.random() * placements.length)];
     const baseWord = basePlacement.word;
-    const letterIndices = shuffleArray(Array.from({ length: baseWord.length }, (_, index) => index));
+    const letterIndices = prioritizeIndices(baseWord.length);
 
     let placed = false;
 
@@ -439,11 +479,7 @@ function createCrossword(words) {
       const newDirection = basePlacement.direction === 'horizontal' ? 'vertical' : 'horizontal';
 
       for (const candidate of candidates) {
-        const candidateIndices = shuffleArray(
-          Array.from({ length: candidate.length }, (_, index) => index).filter(
-            (index) => candidate[index] === letter,
-          ),
-        );
+        const candidateIndices = prioritizedMatches(candidate, letter);
 
         for (const candidateIndex of candidateIndices) {
           const startX = newDirection === 'horizontal' ? anchorX - candidateIndex : anchorX;
